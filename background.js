@@ -1,0 +1,432 @@
+// Auto-group tabs by root/registrable domain (with exceptions) + strict membership enforcement.
+// SAFETY VERSION: adds throttles + re-entrancy guards to prevent event storms / runaway loops.
+import { DEFAULTS } from "./defaults.js";
+
+// -------------------- SETTINGS --------------------
+
+let settings = structuredClone(DEFAULTS);
+
+// Derived runtime structures
+let COMMON_MULTIPART_SUFFIXES = new Set(DEFAULTS.commonMultipartSuffixes);
+let EXCLUDED_FROM_ROOT_COLLAPSE = new Set(DEFAULTS.excludedFromRootCollapse);
+let AUTO_GROUP_PREFIX = DEFAULTS.autoGroupPrefix;
+let COLLAPSE_OTHER_GROUPS_ON_NAV_EVENTS = DEFAULTS.collapseOtherGroupsOnNavEvents;
+let IGNORE_INITIAL_TAB_URL_FOR_GROUPING = DEFAULTS.ignoreInitialTabUrlForGrouping;
+let IGNORE_INITIAL_TAB_URL_FOR_ENFORCEMENT = DEFAULTS.ignoreInitialTabUrlForEnforcement;
+
+let customDomainToIdentity = new Map();
+
+function rebuildDerived() {
+    AUTO_GROUP_PREFIX = settings.autoGroupPrefix ?? DEFAULTS.autoGroupPrefix;
+    COLLAPSE_OTHER_GROUPS_ON_NAV_EVENTS = !!settings.collapseOtherGroupsOnNavEvents;
+    IGNORE_INITIAL_TAB_URL_FOR_GROUPING = !!settings.ignoreInitialTabUrlForGrouping;
+    IGNORE_INITIAL_TAB_URL_FOR_ENFORCEMENT = !!settings.ignoreInitialTabUrlForEnforcement;
+
+    COMMON_MULTIPART_SUFFIXES = new Set((settings.commonMultipartSuffixes ?? []).map(s => String(s).toLowerCase()));
+    EXCLUDED_FROM_ROOT_COLLAPSE = new Set((settings.excludedFromRootCollapse ?? []).map(s => String(s).toLowerCase()));
+
+    customDomainToIdentity = new Map();
+    for (const g of (settings.customDomainGroups ?? [])) {
+        if (!g?.title || !Array.isArray(g.domains)) continue;
+        const ident = AUTO_GROUP_PREFIX + g.title;
+        for (const d of g.domains) {
+            const dl = String(d).trim().toLowerCase();
+            if (dl) customDomainToIdentity.set(dl, ident);
+        }
+    }
+}
+
+async function loadSettings() {
+    settings = await chrome.storage.sync.get(DEFAULTS);
+    rebuildDerived();
+}
+
+chrome.runtime.onStartup?.addListener(loadSettings);
+chrome.runtime.onInstalled?.addListener(loadSettings);
+
+// Live-update if user changes options
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== "sync") return;
+    for (const [k, v] of Object.entries(changes)) settings[k] = v.newValue;
+    rebuildDerived();
+});
+
+// Call once at top-level too
+await loadSettings();
+
+// -------------------- SAFETY RAILS --------------------
+
+// Per-tab debounce: do not process same tab more often than this.
+const TAB_DEBOUNCE_MS = 750;
+
+// Global re-entrancy lock for mutations we cause (group/ungroup/tabGroups.update).
+// We keep it short and best-effort.
+let mutationLockUntil = 0;
+
+// Per-tab last processed timestamp
+const lastProcessedAt = new Map(); // tabId -> ms
+
+function nowMs() { return Date.now(); }
+
+function underMutationLock() {
+    return nowMs() < mutationLockUntil;
+}
+
+function acquireMutationLock(ms = 250) {
+    // Extend lock slightly into the future.
+    mutationLockUntil = Math.max(mutationLockUntil, nowMs() + ms);
+}
+
+function shouldProcessTab(tabId) {
+    const t = nowMs();
+    const last = lastProcessedAt.get(tabId) || 0;
+    if (t - last < TAB_DEBOUNCE_MS) return false;
+    lastProcessedAt.set(tabId, t);
+    return true;
+}
+
+setInterval(() => {
+    const cutoff = nowMs() - 10 * 60 * 1000;
+    for (const [tabId, t] of lastProcessedAt.entries()) {
+        if (t < cutoff) {
+            lastProcessedAt.delete(tabId);
+            lastSeenUrlByTab.delete(tabId);
+            initialUrlByTab.delete(tabId);
+        }
+    }
+}, 5 * 60 * 1000);
+
+// -------------------- UTIL --------------------
+
+const NONE = chrome.tabGroups.TAB_GROUP_ID_NONE;
+
+const lastActiveGroupByWindow = new Map();
+const groupTitleCache = new Map(); // groupId -> title
+const lastSeenUrlByTab = new Map(); // tabId -> last seen tab.url
+const initialUrlByTab = new Map(); // tabId -> first seen http(s) URL
+
+function safeParseUrl(urlString) {
+    try { return new URL(urlString); } catch { return null; }
+}
+function isWebUrl(u) {
+    return u && (u.protocol === "http:" || u.protocol === "https:");
+}
+function getHostnameFromTab(tab, changeInfo) {
+    const url = (changeInfo && changeInfo.url) || tab?.url || tab?.pendingUrl;
+    const u = safeParseUrl(url);
+    if (!isWebUrl(u)) return null;
+    return u.hostname;
+}
+
+function getRootDomain(hostname) {
+    const isIPv4 = /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname);
+    if (isIPv4) return hostname;
+
+    const parts = hostname.split(".").filter(Boolean);
+    if (parts.length <= 2) return hostname;
+
+    const last2 = parts.slice(-2).join(".");
+    const last3 = parts.slice(-3).join(".");
+
+    if (COMMON_MULTIPART_SUFFIXES.has(last2)) return last3;
+    return last2;
+}
+
+function getGroupKey(hostname) {
+    if (EXCLUDED_FROM_ROOT_COLLAPSE.has(hostname)) return hostname;
+    return getRootDomain(hostname);
+}
+
+// Resolve the *identity string* we use as the group title AND the grouping key.
+// - Custom bundles win (based on exact hostname OR root-domain key match)
+// - Otherwise default to prefixed normal group key
+function getIdentityForHostname(hostname) {
+    const h = (hostname || "").toLowerCase();
+    const root = getGroupKey(hostname).toLowerCase();
+
+    // Try exact hostname match first
+    const byHost = customDomainToIdentity.get(h);
+    if (byHost) return byHost;
+
+    // Then try root-domain match (this makes "chess.com" cover "www.chess.com", etc.)
+    const byRoot = customDomainToIdentity.get(root);
+    if (byRoot) return byRoot;
+
+    // Default identity is prefixed root key
+    return AUTO_GROUP_PREFIX + getGroupKey(hostname);
+}
+
+async function getGroupTitle(groupId) {
+    if (groupId == null || groupId === NONE) return null;
+    if (groupTitleCache.has(groupId)) return groupTitleCache.get(groupId);
+
+    try {
+        const g = await chrome.tabGroups.get(groupId);
+        const title = g?.title ?? null;
+        groupTitleCache.set(groupId, title);
+        return title;
+    } catch {
+        return null;
+    }
+}
+
+async function ensureGroupTitle(groupId, title) {
+    try {
+        acquireMutationLock(250);
+        await chrome.tabGroups.update(groupId, { title });
+        groupTitleCache.set(groupId, title);
+    } catch {}
+}
+
+async function setGroupCollapsed(groupId, collapsed) {
+    try {
+        acquireMutationLock(250);
+        await chrome.tabGroups.update(groupId, { collapsed });
+    } catch {}
+}
+
+async function ungroupTab(tabId) {
+    try {
+        acquireMutationLock(250);
+        await chrome.tabs.ungroup(tabId);
+    } catch {}
+}
+
+// Returns tabs in window whose CURRENT identity matches groupIdentity.
+// Excludes pinned tabs and non-http(s).
+async function getMatchingTabs(windowId, groupIdentity) {
+    const tabs = await chrome.tabs.query({ windowId });
+    const matches = [];
+
+    for (const t of tabs) {
+        if (t.pinned) continue;
+        if (!t.url) continue;
+
+        const u = safeParseUrl(t.url);
+        if (!isWebUrl(u)) continue;
+
+        const ident = getIdentityForHostname(u.hostname);
+        if (ident === groupIdentity) matches.push(t);
+    }
+    return matches;
+}
+
+// Find group by identity, but only if group title exactly equals identity.
+async function findExistingGroupIdForIdentity(matches, groupIdentity) {
+    for (const t of matches) {
+        const gid = t.groupId;
+        if (gid == null || gid === NONE) continue;
+
+        const title = await getGroupTitle(gid);
+        if (title === groupIdentity) return gid;
+    }
+    return null;
+}
+
+async function enforceGroupMembershipForTab(tab, currentIdentity) {
+    if (!tab || tab.id == null) return;
+    if (tab.pinned) return;
+
+    if (IGNORE_INITIAL_TAB_URL_FOR_ENFORCEMENT) {
+        const initialUrl = initialUrlByTab.get(tab.id);
+        const currentUrl = tab.url || tab.pendingUrl;
+        if (initialUrl && currentUrl && currentUrl === initialUrl) return;
+    }
+
+    const gid = tab.groupId;
+    if (gid == null || gid === NONE) return;
+
+    const title = await getGroupTitle(gid);
+    if (!title) return;
+
+    // Only police groups created/managed by this extension.
+    if (!title.startsWith(AUTO_GROUP_PREFIX)) return;
+
+    // If tab no longer matches the group's identity, ungroup it.
+    if (title !== currentIdentity) {
+        await ungroupTab(tab.id);
+    }
+}
+
+async function maybeGroupTab(tab, groupIdentity) {
+    if (!tab || tab.id == null || tab.windowId == null) return;
+    if (tab.pinned) return;
+
+    // Optional: ignore grouping while the tab is still on its initial URL
+    if (IGNORE_INITIAL_TAB_URL_FOR_GROUPING) {
+        const initialUrl = initialUrlByTab.get(tab.id);
+        const currentUrl = tab.url || tab.pendingUrl;
+        if (initialUrl && currentUrl && currentUrl === initialUrl) return;
+    }
+
+    // Membership enforcement first
+    await enforceGroupMembershipForTab(tab, groupIdentity);
+
+    const matches = await getMatchingTabs(tab.windowId, groupIdentity);
+
+    // Only group if 2+ matching tabs exist
+    if (matches.length < 2) return;
+
+    const existingGroupId = await findExistingGroupIdForIdentity(matches, groupIdentity);
+
+    if (existingGroupId != null) {
+        try {
+            acquireMutationLock(300);
+            await chrome.tabs.group({ tabIds: [tab.id], groupId: existingGroupId });
+            await ensureGroupTitle(existingGroupId, groupIdentity);
+            await setGroupCollapsed(existingGroupId, false);
+        } catch {}
+        return;
+    }
+
+    // Create new group containing all matching tabs
+    const tabIds = matches.map(t => t.id).filter(id => id != null);
+    if (!tabIds.includes(tab.id)) tabIds.push(tab.id);
+
+    try {
+        acquireMutationLock(350);
+        const newGroupId = await chrome.tabs.group({ tabIds });
+        await ensureGroupTitle(newGroupId, groupIdentity);
+        await setGroupCollapsed(newGroupId, false);
+    } catch {}
+}
+
+async function handleActivation(tabId, windowId) {
+    const tab = await chrome.tabs.get(tabId);
+    if (!tab) return;
+
+    const prevGroupId = lastActiveGroupByWindow.get(windowId);
+    const currGroupId = (tab.groupId != null ? tab.groupId : NONE);
+
+    if (prevGroupId != null && prevGroupId !== NONE && prevGroupId !== currGroupId) {
+        await setGroupCollapsed(prevGroupId, true);
+    }
+    if (currGroupId != null && currGroupId !== NONE && currGroupId !== prevGroupId) {
+        await setGroupCollapsed(currGroupId, false);
+    }
+
+    lastActiveGroupByWindow.set(windowId, currGroupId);
+}
+
+async function collapseAllGroupsExcept(windowId, keepGroupId) {
+    try {
+        const tabs = await chrome.tabs.query({ windowId });
+        const groupIds = new Set();
+
+        for (const t of tabs) {
+            if (t.groupId != null && t.groupId !== NONE) groupIds.add(t.groupId);
+        }
+
+        for (const gid of groupIds) {
+            if (keepGroupId != null && keepGroupId !== NONE && gid === keepGroupId) {
+                // Keep the active/target group expanded
+                await setGroupCollapsed(gid, false);
+            } else {
+                await setGroupCollapsed(gid, true);
+            }
+        }
+    } catch {}
+}
+
+// -------------------- EVENT HANDLERS --------------------
+
+chrome.tabs.onCreated.addListener(async (tab) => {
+    try {
+        if (!tab || tab.id == null) return;
+        if (tab.pinned) return;
+
+        if (underMutationLock()) return;
+        if (!shouldProcessTab(tab.id)) return;
+
+        // Use pendingUrl first; some tabs start there before tab.url is set.
+        const url = tab.pendingUrl || tab.url;
+        const u = safeParseUrl(url);
+        if (!isWebUrl(u)) return;
+
+        // Record the first http(s) URL we see for this tab as its “initial URL”.
+        if (u?.href) initialUrlByTab.set(tab.id, u.href);
+
+        const identity = getIdentityForHostname(u.hostname);
+        await maybeGroupTab(tab, identity);
+
+        if (COLLAPSE_OTHER_GROUPS_ON_NAV_EVENTS) {
+            // Re-fetch the tab so we know its current groupId after grouping logic.
+            const refreshed = await chrome.tabs.get(tab.id);
+            await collapseAllGroupsExcept(refreshed.windowId, refreshed.groupId);
+        }
+    } catch {}
+});
+
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+    try {
+        if (!tab || tab.id == null) return;
+        if (tab.pinned) return;
+
+        if (underMutationLock()) return;
+        if (!shouldProcessTab(tabId)) return;
+
+        // Only react on meaningful lifecycle updates, but detect URL changes ourselves.
+        // Brave sometimes does NOT populate changeInfo.url.
+        const isMeaningful =
+        changeInfo.url ||
+        changeInfo.status === "loading" ||
+        changeInfo.status === "complete";
+
+        if (!isMeaningful) return;
+
+        const currentUrl = tab.url || tab.pendingUrl;
+        if (!currentUrl) return;
+
+        const u = safeParseUrl(currentUrl);
+        if (!isWebUrl(u)) return;
+
+        const initialUrl = initialUrlByTab.get(tabId);
+
+        // If enabled, ignore grouping while the tab is still on its initial URL.
+        if (IGNORE_INITIAL_TAB_URL_FOR_GROUPING && initialUrl && currentUrl === initialUrl) {
+            // Still update lastSeenUrlByTab so we don’t loop.
+            lastSeenUrlByTab.set(tabId, currentUrl);
+            return;
+        }
+
+        const lastUrl = lastSeenUrlByTab.get(tabId);
+        if (lastUrl === currentUrl) return; // no actual URL change we care about
+
+        lastSeenUrlByTab.set(tabId, currentUrl);
+
+        const identity = getIdentityForHostname(u.hostname);
+        await maybeGroupTab(tab, identity);
+
+        if (COLLAPSE_OTHER_GROUPS_ON_NAV_EVENTS) {
+            const refreshed = await chrome.tabs.get(tabId);
+            await collapseAllGroupsExcept(refreshed.windowId, refreshed.groupId);
+        }
+    } catch {}
+});
+
+chrome.tabs.onActivated.addListener(async (activeInfo) => {
+    try {
+        if (underMutationLock()) return;
+        await handleActivation(activeInfo.tabId, activeInfo.windowId);
+    } catch {}
+});
+
+chrome.windows.onFocusChanged.addListener(async (windowId) => {
+    try {
+        if (windowId == null || windowId < 0) return;
+        if (underMutationLock()) return;
+
+        const [activeTab] = await chrome.tabs.query({ windowId, active: true });
+        if (!activeTab) return;
+
+        await handleActivation(activeTab.id, windowId);
+    } catch {}
+});
+
+// Cache maintenance
+chrome.tabGroups.onRemoved?.addListener((group) => {
+    groupTitleCache.delete(group.id);
+});
+chrome.tabGroups.onUpdated?.addListener((group) => {
+    groupTitleCache.set(group.id, group.title ?? null);
+});
