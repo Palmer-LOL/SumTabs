@@ -189,6 +189,29 @@ async function setGroupCollapsed(groupId, collapsed) {
     } catch {}
 }
 
+async function expandGroupIfCollapsed(groupId) {
+    if (groupId == null || groupId === NONE) return;
+
+    try {
+        const group = await chrome.tabGroups.get(groupId);
+        if (!group?.collapsed) return;
+        await setGroupCollapsed(groupId, false);
+    } catch {}
+}
+
+async function refreshNewGroupTitleDisplay(groupId) {
+    if (groupId == null || groupId === NONE) return;
+
+    try {
+        const group = await chrome.tabGroups.get(groupId);
+        if (!group || group.collapsed) return;
+
+        await setGroupCollapsed(groupId, true);
+        await new Promise(resolve => setTimeout(resolve, 30));
+        await setGroupCollapsed(groupId, false);
+    } catch {}
+}
+
 async function ungroupTab(tabId) {
     try {
         acquireMutationLock(250);
@@ -278,7 +301,7 @@ async function maybeGroupTab(tab, groupIdentity) {
             acquireMutationLock(300);
             await chrome.tabs.group({ tabIds: [tab.id], groupId: existingGroupId });
             await ensureGroupTitle(existingGroupId, groupIdentity);
-            await setGroupCollapsed(existingGroupId, false);
+            await expandGroupIfCollapsed(existingGroupId);
         } catch {}
         return;
     }
@@ -291,7 +314,8 @@ async function maybeGroupTab(tab, groupIdentity) {
         acquireMutationLock(350);
         const newGroupId = await chrome.tabs.group({ tabIds });
         await ensureGroupTitle(newGroupId, groupIdentity);
-        await setGroupCollapsed(newGroupId, false);
+        await refreshNewGroupTitleDisplay(newGroupId);
+        await expandGroupIfCollapsed(newGroupId);
     } catch {}
 }
 
