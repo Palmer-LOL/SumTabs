@@ -3,18 +3,14 @@
 <head>
   <meta charset="utf-8" />
   <title>SumTabs</title>
-  <style>
-    body { font: 13px system-ui; margin: 12px; width: 280px; }
-    button { width: 100%; padding: 8px 10px; margin: 6px 0; }
-    .small { color: #555; font-size: 12px; margin-top: 8px; }
-  </style>
+  <link rel="stylesheet" href="style.css">
 </head>
-<body>
-  <div><strong>SumTabs</strong></div>
+<body class="page popup">
+  <div class="popup__title"><strong>SumTabs</strong></div>
 
-  <button id="openSettings">Open Settings</button>
+  <button class="button button--full-width" id="openSettings">Open Settings</button>
 
-  <div class="small">
+  <div class="settings__small-text popup__description--muted">
     Groups tabs by domain. No network calls.
   </div>
 
