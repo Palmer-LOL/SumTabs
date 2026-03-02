@@ -2,6 +2,9 @@ import { DEFAULTS } from "./defaults.js";
 
 const $ = (id) => document.getElementById(id);
 
+let customGroupsState = [];
+let selectedGroupIndex = 0;
+
 function domainsToLines(domains) {
     return (domains || [])
     .map(d => String(d).trim().toLowerCase())
@@ -50,61 +53,77 @@ function setStatus(msg, ok = true) {
     setTimeout(() => { el.textContent = ""; }, 2500);
 }
 
-function createGroupCard(group = { title: "", domains: [] }) {
-    const wrapper = document.createElement("div");
-    wrapper.className = "groupCard";
+function getNextBundleTitle() {
+    const base = "New bundle";
+    const existing = new Set(customGroupsState.map(g => String(g?.title || "").trim()));
+    if (!existing.has(base)) return base;
 
-    wrapper.innerHTML = `
-    <div class="row2">
-    <label>Bundle title</label>
-    <input type="text" class="groupTitle" placeholder="e.g., News" value="">
-    </div>
+    let i = 2;
+    while (existing.has(`${base} ${i}`)) i += 1;
+    return `${base} ${i}`;
+}
 
-    <div class="row2">
-    <label>Domains (one per line)</label>
-    <textarea class="groupDomains" placeholder="nytimes.com\ntheatlantic.com"></textarea>
-    </div>
+function updateSelectedGroupFromInputs() {
+    const current = customGroupsState[selectedGroupIndex];
+    if (!current) return;
+    current.title = $("groupTitle").value.trim();
+    current.domains = linesToDomains($("groupDomains").value);
+}
 
-    <button type="button" class="removeGroup danger">Remove</button>
-    `;
+function renderSelectedGroup() {
+    const current = customGroupsState[selectedGroupIndex];
+    $("groupTitle").value = current?.title ?? "";
+    $("groupDomains").value = domainsToLines(current?.domains ?? []);
 
-    wrapper.querySelector(".groupTitle").value = group.title ?? "";
-    wrapper.querySelector(".groupDomains").value = domainsToLines(group.domains ?? []);
+    const disabled = !current;
+    $("groupTitle").disabled = disabled;
+    $("groupDomains").disabled = disabled;
+    $("removeGroup").disabled = disabled;
+}
 
-    wrapper.querySelector(".removeGroup").addEventListener("click", () => {
-        wrapper.remove();
-        syncAdvancedJsonFromUi();
+function renderGroupSelect() {
+    const select = $("customGroupSelect");
+    select.innerHTML = "";
+
+    customGroupsState.forEach((group, i) => {
+        const option = document.createElement("option");
+        const title = String(group.title || "").trim() || `Untitled bundle ${i + 1}`;
+        option.value = String(i);
+        option.textContent = title;
+        select.appendChild(option);
     });
 
-    // keep Advanced JSON in sync as the user types (nice for debugging)
-    wrapper.querySelector(".groupTitle").addEventListener("input", syncAdvancedJsonFromUi);
-    wrapper.querySelector(".groupDomains").addEventListener("input", syncAdvancedJsonFromUi);
+    if (customGroupsState.length === 0) {
+        selectedGroupIndex = -1;
+        renderSelectedGroup();
+        syncAdvancedJsonFromUi();
+        return;
+    }
 
-    return wrapper;
+    if (selectedGroupIndex < 0 || selectedGroupIndex >= customGroupsState.length) {
+        selectedGroupIndex = 0;
+    }
+
+    select.value = String(selectedGroupIndex);
+    renderSelectedGroup();
+    syncAdvancedJsonFromUi();
+}
+
+function setGroupsState(groups, preferredIndex = 0) {
+    customGroupsState = Array.isArray(groups)
+    ? groups.map((g) => ({
+        title: String(g?.title ?? "").trim(),
+        domains: linesToDomains(domainsToLines(g?.domains ?? [])),
+    }))
+    : [];
+
+    selectedGroupIndex = customGroupsState.length ? Math.max(0, Math.min(preferredIndex, customGroupsState.length - 1)) : -1;
+    renderGroupSelect();
 }
 
 function readGroupsFromUi() {
-    const container = $("customGroups");
-    const cards = Array.from(container.querySelectorAll(".groupCard"));
-
-    const groups = cards.map(card => {
-        const title = card.querySelector(".groupTitle").value.trim();
-        const domains = linesToDomains(card.querySelector(".groupDomains").value);
-        return { title, domains };
-    });
-
-    return normalizeCustomGroups(groups);
-}
-
-function renderGroupsEditor(groups) {
-    const container = $("customGroups");
-    container.innerHTML = "";
-    for (const g of normalizeCustomGroups(groups)) {
-        container.appendChild(createGroupCard(g));
-    }
-    // If there are none, start with an empty card (optional)
-    if (!container.children.length) container.appendChild(createGroupCard());
-    syncAdvancedJsonFromUi();
+    updateSelectedGroupFromInputs();
+    return normalizeCustomGroups(customGroupsState);
 }
 
 function syncAdvancedJsonFromUi() {
@@ -123,14 +142,16 @@ async function load() {
     $("commonMultipartSuffixes").value = arrayToLines(stored.commonMultipartSuffixes);
     $("excludedFromRootCollapse").value = arrayToLines(stored.excludedFromRootCollapse);
 
-    renderGroupsEditor(stored.customDomainGroups ?? DEFAULTS.customDomainGroups);
+    const loadedGroups = normalizeCustomGroups(stored.customDomainGroups ?? DEFAULTS.customDomainGroups);
+    setGroupsState(loadedGroups.length ? loadedGroups : [{ title: "", domains: [] }]);
 
     const adv = $("customDomainGroupsJson");
     if (adv) {
         adv.addEventListener("change", () => {
             try {
                 const parsed = JSON.parse(adv.value || "[]");
-                renderGroupsEditor(parsed);
+                const normalized = normalizeCustomGroups(parsed);
+                setGroupsState(normalized.length ? normalized : [{ title: "", domains: [] }]);
                 setStatus("Loaded bundles from JSON.");
             } catch (e) {
                 setStatus(`Advanced JSON error: ${e.message}`, false);
@@ -154,6 +175,7 @@ async function save() {
 
     await chrome.storage.sync.set(payload);
     setStatus("Saved.");
+    setGroupsState(customGroups.length ? customGroups : [{ title: "", domains: [] }], selectedGroupIndex);
 }
 
 async function reset() {
@@ -162,9 +184,44 @@ async function reset() {
     setStatus("Reset to defaults.");
 }
 
-$("addGroup").addEventListener("click", () => {
-    $("customGroups").appendChild(createGroupCard());
+$("customGroupSelect").addEventListener("change", (event) => {
+    updateSelectedGroupFromInputs();
+    selectedGroupIndex = Number(event.target.value);
+    renderSelectedGroup();
     syncAdvancedJsonFromUi();
+});
+
+$("groupTitle").addEventListener("input", () => {
+    updateSelectedGroupFromInputs();
+    renderGroupSelect();
+});
+
+$("groupDomains").addEventListener("input", () => {
+    updateSelectedGroupFromInputs();
+    syncAdvancedJsonFromUi();
+});
+
+$("addGroup").addEventListener("click", () => {
+    updateSelectedGroupFromInputs();
+    customGroupsState.push({ title: getNextBundleTitle(), domains: [] });
+    selectedGroupIndex = customGroupsState.length - 1;
+    renderGroupSelect();
+    $("groupTitle").focus();
+    $("groupTitle").select();
+});
+
+$("removeGroup").addEventListener("click", () => {
+    if (selectedGroupIndex < 0 || selectedGroupIndex >= customGroupsState.length) return;
+
+    customGroupsState.splice(selectedGroupIndex, 1);
+    if (customGroupsState.length === 0) {
+        customGroupsState.push({ title: "", domains: [] });
+        selectedGroupIndex = 0;
+    } else if (selectedGroupIndex >= customGroupsState.length) {
+        selectedGroupIndex = customGroupsState.length - 1;
+    }
+
+    renderGroupSelect();
 });
 
 $("save").addEventListener("click", save);
