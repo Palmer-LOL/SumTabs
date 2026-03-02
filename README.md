@@ -26,7 +26,7 @@ The extension runs entirely in the browser — no network calls, no analytics �
 - **Custom bundles.**  
   Define your own bundles of hostnames under a single title.  
   Example: A “News” bundle containing `nytimes.com` and `theatlantic.com`.  
-  Tabs matching any listed domain will be grouped together under `∑ News`.
+  Tabs matching any listed domain will be grouped together under `∑ News`. You can also assign a specific tab-group color per bundle.
 
 - **Public-suffix overrides.**  
   Includes a configurable “mini PSL” list (e.g. `co.uk`, `com.au`) used when determining root domains. You can extend this list on the settings page.
@@ -65,7 +65,7 @@ To configure behavior:
 - Toggle **Ignore initial tab URL for grouping** and **Ignore initial tab URL for enforcement** to avoid grouping while tabs are still on their initial load.
 - Add entries under **Public-suffix overrides** (one per line) to tweak root-domain detection.
 - Add **Excluded hostnames** (one per line) to prevent specific subdomains from collapsing.
-- Use the **Custom domain bundles** editor to create and manage domain groupings.
+- Use the **Custom domain bundles** editor to create/manage domain groupings and optionally choose a bundle color.
 
 ---
 

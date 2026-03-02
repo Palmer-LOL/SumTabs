@@ -15,6 +15,8 @@ let IGNORE_INITIAL_TAB_URL_FOR_GROUPING = DEFAULTS.ignoreInitialTabUrlForGroupin
 let IGNORE_INITIAL_TAB_URL_FOR_ENFORCEMENT = DEFAULTS.ignoreInitialTabUrlForEnforcement;
 
 let customDomainToIdentity = new Map();
+let customIdentityToColor = new Map();
+const VALID_GROUP_COLORS = new Set(["grey", "blue", "red", "yellow", "green", "pink", "purple", "cyan", "orange"]);
 
 function rebuildDerived() {
     AUTO_GROUP_PREFIX = settings.autoGroupPrefix ?? DEFAULTS.autoGroupPrefix;
@@ -26,9 +28,12 @@ function rebuildDerived() {
     EXCLUDED_FROM_ROOT_COLLAPSE = new Set((settings.excludedFromRootCollapse ?? []).map(s => String(s).toLowerCase()));
 
     customDomainToIdentity = new Map();
+    customIdentityToColor = new Map();
     for (const g of (settings.customDomainGroups ?? [])) {
         if (!g?.title || !Array.isArray(g.domains)) continue;
         const ident = AUTO_GROUP_PREFIX + g.title;
+        const color = String(g?.color ?? "").trim().toLowerCase();
+        if (VALID_GROUP_COLORS.has(color)) customIdentityToColor.set(ident, color);
         for (const d of g.domains) {
             const dl = String(d).trim().toLowerCase();
             if (dl) customDomainToIdentity.set(dl, ident);
@@ -190,6 +195,22 @@ async function ensureGroupTitle(groupId, title) {
     }
 }
 
+async function ensureGroupColor(groupId, color) {
+    if (groupId == null || groupId === NONE) return false;
+    if (!VALID_GROUP_COLORS.has(color)) return false;
+
+    try {
+        const group = await chrome.tabGroups.get(groupId);
+        if (group?.color === color) return false;
+
+        acquireMutationLock(250);
+        await chrome.tabGroups.update(groupId, { color });
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 async function setGroupCollapsed(groupId, collapsed) {
     try {
         acquireMutationLock(250);
@@ -341,12 +362,14 @@ async function maybeGroupTab(tab, groupIdentity) {
     if (matches.length < 2) return;
 
     const existingGroupId = await findExistingGroupIdForIdentity(matches, groupIdentity);
+    const desiredColor = customIdentityToColor.get(groupIdentity);
 
     if (existingGroupId != null) {
         try {
             acquireMutationLock(300);
             await chrome.tabs.group({ tabIds: [tab.id], groupId: existingGroupId });
             const didRenameGroup = await ensureGroupTitle(existingGroupId, groupIdentity);
+            await ensureGroupColor(existingGroupId, desiredColor);
             await expandGroupIfCollapsed(existingGroupId);
             if (didRenameGroup) {
                 await runChromiumGroupTitleRenderWorkaround(tab.windowId);
@@ -363,6 +386,7 @@ async function maybeGroupTab(tab, groupIdentity) {
         acquireMutationLock(350);
         const newGroupId = await chrome.tabs.group({ tabIds });
         await ensureGroupTitle(newGroupId, groupIdentity);
+        await ensureGroupColor(newGroupId, desiredColor);
         await expandGroupIfCollapsed(newGroupId);
         await runChromiumGroupTitleRenderWorkaround(tab.windowId);
     } catch {}

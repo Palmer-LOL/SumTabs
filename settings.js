@@ -4,6 +4,7 @@ const $ = (id) => document.getElementById(id);
 
 let customGroupsState = [];
 let selectedGroupIndex = 0;
+const VALID_GROUP_COLORS = new Set(["grey", "blue", "red", "yellow", "green", "pink", "purple", "cyan", "orange"]);
 
 function domainsToLines(domains) {
     return (domains || [])
@@ -28,9 +29,14 @@ function normalizeCustomGroups(groups) {
         const normDomains = domains
         .map(d => String(d).trim().toLowerCase())
         .filter(Boolean);
+        const color = String(g?.color ?? "").trim().toLowerCase();
 
         if (!title) continue;
-        out.push({ title, domains: normDomains });
+        out.push({
+            title,
+            domains: normDomains,
+            ...(VALID_GROUP_COLORS.has(color) ? { color } : {}),
+        });
     }
     return out;
 }
@@ -68,16 +74,19 @@ function updateSelectedGroupFromInputs() {
     if (!current) return;
     current.title = $("groupTitle").value.trim();
     current.domains = linesToDomains($("groupDomains").value);
+    current.color = String($("groupColor").value || "").trim().toLowerCase();
 }
 
 function renderSelectedGroup() {
     const current = customGroupsState[selectedGroupIndex];
     $("groupTitle").value = current?.title ?? "";
     $("groupDomains").value = domainsToLines(current?.domains ?? []);
+    $("groupColor").value = current?.color ?? "";
 
     const disabled = !current;
     $("groupTitle").disabled = disabled;
     $("groupDomains").disabled = disabled;
+    $("groupColor").disabled = disabled;
     $("removeGroup").disabled = disabled;
 }
 
@@ -114,6 +123,7 @@ function setGroupsState(groups, preferredIndex = 0) {
     ? groups.map((g) => ({
         title: String(g?.title ?? "").trim(),
         domains: linesToDomains(domainsToLines(g?.domains ?? [])),
+        color: VALID_GROUP_COLORS.has(String(g?.color ?? "").trim().toLowerCase()) ? String(g.color).trim().toLowerCase() : "",
     }))
     : [];
 
@@ -201,9 +211,14 @@ $("groupDomains").addEventListener("input", () => {
     syncAdvancedJsonFromUi();
 });
 
+$("groupColor").addEventListener("change", () => {
+    updateSelectedGroupFromInputs();
+    syncAdvancedJsonFromUi();
+});
+
 $("addGroup").addEventListener("click", () => {
     updateSelectedGroupFromInputs();
-    customGroupsState.push({ title: getNextBundleTitle(), domains: [] });
+    customGroupsState.push({ title: getNextBundleTitle(), domains: [], color: "" });
     selectedGroupIndex = customGroupsState.length - 1;
     renderGroupSelect();
     $("groupTitle").focus();
@@ -215,7 +230,7 @@ $("removeGroup").addEventListener("click", () => {
 
     customGroupsState.splice(selectedGroupIndex, 1);
     if (customGroupsState.length === 0) {
-        customGroupsState.push({ title: "", domains: [] });
+        customGroupsState.push({ title: "", domains: [], color: "" });
         selectedGroupIndex = 0;
     } else if (selectedGroupIndex >= customGroupsState.length) {
         selectedGroupIndex = customGroupsState.length - 1;

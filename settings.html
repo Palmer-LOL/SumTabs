@@ -61,6 +61,22 @@
         <label class="settings__field-label" for="groupDomains">Domains (one per line)</label>
         <textarea class="textarea" id="groupDomains" placeholder="nytimes.com&#10;theatlantic.com"></textarea>
       </div>
+
+      <div class="bundle-editor__row">
+        <label class="settings__field-label" for="groupColor">Group color</label>
+        <select class="bundle-editor__select" id="groupColor">
+          <option value="">Browser default</option>
+          <option value="grey">Grey</option>
+          <option value="blue">Blue</option>
+          <option value="red">Red</option>
+          <option value="yellow">Yellow</option>
+          <option value="green">Green</option>
+          <option value="pink">Pink</option>
+          <option value="purple">Purple</option>
+          <option value="cyan">Cyan</option>
+          <option value="orange">Orange</option>
+        </select>
+      </div>
     </div>
 
     <div class="settings__small-text settings__details-note">
@@ -70,7 +86,7 @@
     <details class="settings__details">
       <summary class="settings__small-text">Advanced: view/edit raw JSON</summary>
       <textarea class="textarea" id="customDomainGroupsJson"></textarea>
-      <div class="settings__small-text">Format: [{"title":"Chess","domains":["chess.com","chessly.com"]}]</div>
+      <div class="settings__small-text">Format: [{"title":"Chess","domains":["chess.com","chessly.com"],"color":"purple"}]</div>
     </details>
   </div>
 

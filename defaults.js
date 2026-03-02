@@ -19,6 +19,6 @@ export const DEFAULTS = {
     ],
 
     customDomainGroups: [
-        // { title: "Chess", domains: ["chess.com", "chessly.com"] }
+        // { title: "Chess", domains: ["chess.com", "chessly.com"], color: "purple" }
     ],
 };
