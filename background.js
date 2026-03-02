@@ -54,6 +54,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "sync") return;
     for (const [k, v] of Object.entries(changes)) settings[k] = v.newValue;
     rebuildDerived();
+
+    if (Object.prototype.hasOwnProperty.call(changes, "customDomainGroups")) {
+        void updateManagedGroupColorsFromSettings();
+    }
 });
 
 let settingsReady = loadSettings();
@@ -208,6 +212,34 @@ async function ensureGroupColor(groupId, color) {
         return true;
     } catch {
         return false;
+    }
+}
+
+async function updateManagedGroupColorsFromSettings() {
+    const tabs = await chrome.tabs.query({});
+    const windowIdsNeedingRenderWorkaround = new Set();
+    const seenGroupIds = new Set();
+
+    for (const tab of tabs) {
+        const groupId = tab.groupId;
+        if (groupId == null || groupId === NONE) continue;
+        if (seenGroupIds.has(groupId)) continue;
+        seenGroupIds.add(groupId);
+
+        const title = await getGroupTitle(groupId);
+        if (!title?.startsWith(AUTO_GROUP_PREFIX)) continue;
+
+        const desiredColor = customIdentityToColor.get(title);
+        if (!VALID_GROUP_COLORS.has(desiredColor)) continue;
+
+        const didUpdateColor = await ensureGroupColor(groupId, desiredColor);
+        if (didUpdateColor && tab.windowId != null) {
+            windowIdsNeedingRenderWorkaround.add(tab.windowId);
+        }
+    }
+
+    for (const windowId of windowIdsNeedingRenderWorkaround) {
+        await runChromiumGroupTitleRenderWorkaround(windowId);
     }
 }
 
