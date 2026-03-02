@@ -12,6 +12,9 @@
     input[type="text"] { width: 100%; padding: 6px; }
     button { padding: 8px 12px; }
     .status { margin-left: 10px; }
+    .groupEditor { border: 1px solid #ddd; border-radius: 8px; padding: 12px; background: #fafafa; }
+    .groupToolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+    .groupToolbar select { flex: 1; padding: 6px; }
   </style>
 </head>
 <body>
@@ -54,9 +57,23 @@
   <div class="row">
     <label>Custom domain bundles</label>
 
-    <div id="customGroups"></div>
+    <div class="groupEditor">
+      <div class="groupToolbar">
+        <select id="customGroupSelect"></select>
+        <button type="button" id="addGroup">New bundle</button>
+        <button type="button" id="removeGroup">Delete bundle</button>
+      </div>
 
-    <button type="button" id="addGroup">Add bundle</button>
+      <div class="row2">
+        <label for="groupTitle">Bundle title</label>
+        <input id="groupTitle" type="text" placeholder="e.g., News">
+      </div>
+
+      <div class="row2">
+        <label for="groupDomains">Domains (one per line)</label>
+        <textarea id="groupDomains" placeholder="nytimes.com&#10;theatlantic.com"></textarea>
+      </div>
+    </div>
 
     <div class="small" style="margin-top:8px;">
       Each bundle has a title and a list of domains (one per line). Example title: “News”, domains: nytimes.com, theatlantic.com
