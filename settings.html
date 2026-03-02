@@ -52,9 +52,21 @@
   </div>
 
   <div class="row">
-    <label for="customDomainGroups">Custom domain bundles (JSON)</label>
-    <textarea id="customDomainGroups"></textarea>
-    <div class="small">Format: [{"title":"Chess","domains":["chess.com","chessly.com"]}]</div>
+    <label>Custom domain bundles</label>
+
+    <div id="customGroups"></div>
+
+    <button type="button" id="addGroup">Add bundle</button>
+
+    <div class="small" style="margin-top:8px;">
+      Each bundle has a title and a list of domains (one per line). Example title: “News”, domains: nytimes.com, theatlantic.com
+    </div>
+
+    <details style="margin-top:10px;">
+      <summary class="small">Advanced: view/edit raw JSON</summary>
+      <textarea id="customDomainGroupsJson"></textarea>
+      <div class="small">Format: [{"title":"Chess","domains":["chess.com","chessly.com"]}]</div>
+    </details>
   </div>
 
   <div class="row">

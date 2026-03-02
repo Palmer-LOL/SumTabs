@@ -51,8 +51,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     rebuildDerived();
 });
 
-// Call once at top-level too
-await loadSettings();
+let settingsReady = loadSettings();
 
 // -------------------- SAFETY RAILS --------------------
 
@@ -154,6 +153,11 @@ function getIdentityForHostname(hostname) {
 
     // Default identity is prefixed root key
     return AUTO_GROUP_PREFIX + getGroupKey(hostname);
+}
+
+async function withSettings(fn) {
+    await settingsReady;
+    return fn();
 }
 
 async function getGroupTitle(groupId) {
@@ -332,6 +336,7 @@ async function collapseAllGroupsExcept(windowId, keepGroupId) {
 
 chrome.tabs.onCreated.addListener(async (tab) => {
     try {
+        await settingsReady;
         if (!tab || tab.id == null) return;
         if (tab.pinned) return;
 
@@ -359,6 +364,7 @@ chrome.tabs.onCreated.addListener(async (tab) => {
 
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     try {
+        await settingsReady;
         if (!tab || tab.id == null) return;
         if (tab.pinned) return;
 
@@ -406,6 +412,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 
 chrome.tabs.onActivated.addListener(async (activeInfo) => {
     try {
+        await settingsReady;
         if (underMutationLock()) return;
         await handleActivation(activeInfo.tabId, activeInfo.windowId);
     } catch {}
@@ -413,6 +420,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
 
 chrome.windows.onFocusChanged.addListener(async (windowId) => {
     try {
+        await settingsReady;
         if (windowId == null || windowId < 0) return;
         if (underMutationLock()) return;
 
