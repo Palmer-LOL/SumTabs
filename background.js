@@ -175,11 +175,19 @@ async function getGroupTitle(groupId) {
 }
 
 async function ensureGroupTitle(groupId, title) {
+    if (groupId == null || groupId === NONE) return false;
+
     try {
+        const currentTitle = await getGroupTitle(groupId);
+        if (currentTitle === title) return false;
+
         acquireMutationLock(250);
         await chrome.tabGroups.update(groupId, { title });
         groupTitleCache.set(groupId, title);
-    } catch {}
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 async function setGroupCollapsed(groupId, collapsed) {
@@ -338,9 +346,11 @@ async function maybeGroupTab(tab, groupIdentity) {
         try {
             acquireMutationLock(300);
             await chrome.tabs.group({ tabIds: [tab.id], groupId: existingGroupId });
-            await ensureGroupTitle(existingGroupId, groupIdentity);
+            const didRenameGroup = await ensureGroupTitle(existingGroupId, groupIdentity);
             await expandGroupIfCollapsed(existingGroupId);
-            await runChromiumGroupTitleRenderWorkaround(tab.windowId);
+            if (didRenameGroup) {
+                await runChromiumGroupTitleRenderWorkaround(tab.windowId);
+            }
         } catch {}
         return;
     }
