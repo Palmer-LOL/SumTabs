@@ -199,17 +199,55 @@ async function expandGroupIfCollapsed(groupId) {
     } catch {}
 }
 
-async function refreshNewGroupTitleDisplay(groupId) {
-    if (groupId == null || groupId === NONE) return;
+async function runChromiumGroupTitleRenderWorkaround(windowId) {
+    if (windowId == null) return;
+
+    let blankTabId = null;
 
     try {
-        const group = await chrome.tabGroups.get(groupId);
-        if (!group || group.collapsed) return;
+        const [activeTab] = await chrome.tabs.query({ windowId, active: true });
+        if (!activeTab?.id) return;
 
-        await setGroupCollapsed(groupId, true);
-        await new Promise(resolve => setTimeout(resolve, 30));
-        await setGroupCollapsed(groupId, false);
-    } catch {}
+        const collapseStateByGroup = new Map();
+
+        const blankTab = await chrome.tabs.create({ windowId, url: "about:blank", active: false });
+        if (!blankTab?.id) return;
+
+        blankTabId = blankTab.id;
+
+        await chrome.tabs.update(blankTabId, { active: true });
+
+        const tabs = await chrome.tabs.query({ windowId });
+        const groupIds = new Set();
+
+        for (const t of tabs) {
+            if (t.groupId != null && t.groupId !== NONE) groupIds.add(t.groupId);
+        }
+
+        for (const gid of groupIds) {
+            try {
+                const group = await chrome.tabGroups.get(gid);
+                collapseStateByGroup.set(gid, !!group?.collapsed);
+            } catch {}
+        }
+
+        for (const gid of groupIds) {
+            await setGroupCollapsed(gid, true);
+        }
+
+        await chrome.tabs.update(activeTab.id, { active: true });
+
+        for (const [gid, wasCollapsed] of collapseStateByGroup.entries()) {
+            await setGroupCollapsed(gid, wasCollapsed);
+        }
+    } catch {
+    } finally {
+        if (blankTabId != null) {
+            try {
+                await chrome.tabs.remove(blankTabId);
+            } catch {}
+        }
+    }
 }
 
 async function ungroupTab(tabId) {
@@ -302,6 +340,7 @@ async function maybeGroupTab(tab, groupIdentity) {
             await chrome.tabs.group({ tabIds: [tab.id], groupId: existingGroupId });
             await ensureGroupTitle(existingGroupId, groupIdentity);
             await expandGroupIfCollapsed(existingGroupId);
+            await runChromiumGroupTitleRenderWorkaround(tab.windowId);
         } catch {}
         return;
     }
@@ -314,8 +353,8 @@ async function maybeGroupTab(tab, groupIdentity) {
         acquireMutationLock(350);
         const newGroupId = await chrome.tabs.group({ tabIds });
         await ensureGroupTitle(newGroupId, groupIdentity);
-        await refreshNewGroupTitleDisplay(newGroupId);
         await expandGroupIfCollapsed(newGroupId);
+        await runChromiumGroupTitleRenderWorkaround(tab.windowId);
     } catch {}
 }
 
