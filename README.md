@@ -1,0 +1,99 @@
+# SumTabs – Domain-Aware Tab Grouping Extension
+
+SumTabs is a Chrome/Chromium extension that helps tame tab overload by automatically grouping related tabs together. It watches new tabs and navigation events, infers a *group identity* from each tab’s hostname, and uses the built-in Tab Groups API to collect matching tabs under a common banner.
+
+The extension runs entirely in the browser — no network calls, no analytics — and keeps its configuration in Chrome’s sync storage.
+
+---
+
+## Features
+
+### Domain-Based Grouping
+
+- **Automatic grouping by root domain.**  
+  New tabs are grouped based on the registrable portion of their hostname (e.g. `docs.google.com` and `mail.google.com` fall under `google.com`). IPv4 addresses and multipart TLDs are handled correctly. Group titles are prefixed with `∑ `.
+
+- **Strict membership enforcement.**  
+  When a tab changes URL, SumTabs verifies that it still belongs in its current group. If the hostname no longer matches the group identity, the tab is ungrouped and reassigned if appropriate.
+
+- **Focus mode.**  
+  When enabled, navigating or creating a tab collapses all other groups in the window so the active group remains expanded.
+
+---
+
+### Custom Grouping Rules
+
+- **Custom bundles.**  
+  Define your own bundles of hostnames under a single title.  
+  Example: A “News” bundle containing `nytimes.com` and `theatlantic.com`.  
+  Tabs matching any listed domain will be grouped together under `∑ News`.
+
+- **Public-suffix overrides.**  
+  Includes a configurable “mini PSL” list (e.g. `co.uk`, `com.au`) used when determining root domains. You can extend this list on the settings page.
+
+- **Excluded hostnames.**  
+  Prevent specific subdomains (e.g. `docs.google.com`) from collapsing to their root domain.
+
+- **Advanced JSON editing.**  
+  A collapsible section in the settings page allows direct editing of the custom bundle configuration in JSON format.
+
+---
+
+## Privacy & Permissions
+
+- **Local-only processing.**  
+  All URL parsing and grouping logic runs locally in your browser.
+
+- **No telemetry.**  
+  SumTabs does not transmit data, include analytics, or load remote code.
+
+- **Chrome sync storage.**  
+  Settings are stored using `chrome.storage.sync`. If Chrome Sync is enabled, settings may sync across devices as part of your browser profile.
+
+---
+
+## Usage
+
+Once installed, SumTabs begins grouping tabs automatically.
+
+Open multiple tabs from the same domain (or matching a custom bundle) and they will be grouped together under a prefixed identity
+
+To configure behavior:
+
+- Open the extension popup and click **Open Settings**.
+- Toggle **Collapse other groups when navigating/creating tabs** to enable or disable focus mode.
+- Toggle **Ignore initial tab URL for grouping** and **Ignore initial tab URL for enforcement** to avoid grouping while tabs are still on their initial load.
+- Add entries under **Public-suffix overrides** (one per line) to tweak root-domain detection.
+- Add **Excluded hostnames** (one per line) to prevent specific subdomains from collapsing.
+- Use the **Custom domain bundles** editor to create and manage domain groupings.
+
+---
+
+## Code Structure
+
+- **`background.js`**  
+  Core grouping logic. Listens to tab creation, updates, activation, and window focus events. Includes throttling and re-entrancy safeguards to prevent event storms.
+
+- **`defaults.js`**  
+  Defines default settings, including prefix, collapse flags, public-suffix overrides, and custom bundles.
+
+- **`settings.html` + `settings.js`**  
+  Implements the options page UI and storage logic. Uses semantic, BEM-style class names (e.g. `.settings__row`, `.bundle-editor__toolbar`).
+
+- **`popup.html` + `popup.js`**  
+  Minimal popup providing access to the settings page.
+
+- **`style.css`**  
+  Centralized stylesheet using CSS custom properties for shared design tokens (fonts, spacing, colors). Organized into layout blocks, component blocks, and modifiers using a BEM-style convention for maintainability.
+
+---
+
+## Browser Compatibility
+
+SumTabs targets Chromium-based browsers that support the Tab Groups API (e.g. Chrome, Brave, Edge). Firefox does not currently support this API.
+
+---
+
+## License
+
+This project is licensed under the **[Do What The Fuck You Want To Public License (WTFPL v2)](https://www.wtfpl.net)**.
