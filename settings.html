@@ -3,98 +3,86 @@
 <head>
   <meta charset="utf-8" />
   <title>SumTabs Settings</title>
-  <style>
-    body { font: 14px system-ui; margin: 16px; max-width: 900px; }
-    textarea { width: 100%; min-height: 110px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-    .row { margin: 14px 0; }
-    .small { color: #555; font-size: 12px; }
-    label { display: block; font-weight: 600; margin-bottom: 6px; }
-    input[type="text"] { width: 100%; padding: 6px; }
-    button { padding: 8px 12px; }
-    .status { margin-left: 10px; }
-    .groupEditor { border: 1px solid #ddd; border-radius: 8px; padding: 12px; background: #fafafa; }
-    .groupToolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
-    .groupToolbar select { flex: 1; padding: 6px; }
-  </style>
+  <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="page settings">
   <h1>SumTabs Settings</h1>
 
-  <div class="row">
-    <label>
-      <input id="collapseOtherGroupsOnNavEvents" type="checkbox">
+  <div class="settings__row">
+    <label class="settings__field-label checkbox-field">
+      <input class="checkbox-field__input" id="collapseOtherGroupsOnNavEvents" type="checkbox">
       Collapse other groups when navigating/creating tabs
     </label>
-    <div class="small">Aggressive “focus mode.” Turn off if you work across groups.</div>
+    <div class="settings__small-text">Aggressive “focus mode.” Turn off if you work across groups.</div>
   </div>
 
-  <div class="row">
-    <label>
-      <input id="ignoreInitialTabUrlForGrouping" type="checkbox">
+  <div class="settings__row">
+    <label class="settings__field-label checkbox-field">
+      <input class="checkbox-field__input" id="ignoreInitialTabUrlForGrouping" type="checkbox">
       Ignore initial tab URL for grouping
     </label>
   </div>
 
-  <div class="row">
-    <label>
-      <input id="ignoreInitialTabUrlForEnforcement" type="checkbox">
+  <div class="settings__row">
+    <label class="settings__field-label checkbox-field">
+      <input class="checkbox-field__input" id="ignoreInitialTabUrlForEnforcement" type="checkbox">
       Ignore initial tab URL for enforcement
     </label>
   </div>
 
-  <div class="row">
-    <label for="commonMultipartSuffixes">Public-suffix overrides (one per line)</label>
-    <textarea id="commonMultipartSuffixes"></textarea>
-    <div class="small">Examples: co.uk, com.au, github.io. These are treated like public suffixes for root-domain collapsing.</div>
+  <div class="settings__row">
+    <label class="settings__field-label" for="commonMultipartSuffixes">Public-suffix overrides (one per line)</label>
+    <textarea class="textarea" id="commonMultipartSuffixes"></textarea>
+    <div class="settings__small-text">Examples: co.uk, com.au, github.io. These are treated like public suffixes for root-domain collapsing.</div>
   </div>
 
-  <div class="row">
-    <label for="excludedFromRootCollapse">Excluded hostnames (one per line)</label>
-    <textarea id="excludedFromRootCollapse"></textarea>
-    <div class="small">Exact hostnames that should not collapse to their root domain (e.g., docs.google.com).</div>
+  <div class="settings__row">
+    <label class="settings__field-label" for="excludedFromRootCollapse">Excluded hostnames (one per line)</label>
+    <textarea class="textarea" id="excludedFromRootCollapse"></textarea>
+    <div class="settings__small-text">Exact hostnames that should not collapse to their root domain (e.g., docs.google.com).</div>
   </div>
 
-  <div class="row">
-    <label>Custom domain bundles</label>
+  <div class="settings__row">
+    <label class="settings__field-label">Custom domain bundles</label>
 
-    <div class="groupEditor">
-      <div class="groupToolbar">
-        <select id="customGroupSelect"></select>
-        <button type="button" id="addGroup">New bundle</button>
-        <button type="button" id="removeGroup">Delete bundle</button>
+    <div class="bundle-editor">
+      <div class="bundle-editor__toolbar">
+        <select class="bundle-editor__select" id="customGroupSelect"></select>
+        <button class="button" type="button" id="addGroup">New bundle</button>
+        <button class="button" type="button" id="removeGroup">Delete bundle</button>
       </div>
 
-      <div class="row2">
-        <label for="groupTitle">Bundle title</label>
-        <input id="groupTitle" type="text" placeholder="e.g., News">
+      <div class="bundle-editor__row">
+        <label class="settings__field-label" for="groupTitle">Bundle title</label>
+        <input class="input-text" id="groupTitle" type="text" placeholder="e.g., News">
       </div>
 
-      <div class="row2">
-        <label for="groupDomains">Domains (one per line)</label>
-        <textarea id="groupDomains" placeholder="nytimes.com&#10;theatlantic.com"></textarea>
+      <div class="bundle-editor__row">
+        <label class="settings__field-label" for="groupDomains">Domains (one per line)</label>
+        <textarea class="textarea" id="groupDomains" placeholder="nytimes.com&#10;theatlantic.com"></textarea>
       </div>
     </div>
 
-    <div class="small" style="margin-top:8px;">
+    <div class="settings__small-text settings__details-note">
       Each bundle has a title and a list of domains (one per line). Example title: “News”, domains: nytimes.com, theatlantic.com
     </div>
 
-    <details style="margin-top:10px;">
-      <summary class="small">Advanced: view/edit raw JSON</summary>
-      <textarea id="customDomainGroupsJson"></textarea>
-      <div class="small">Format: [{"title":"Chess","domains":["chess.com","chessly.com"]}]</div>
+    <details class="settings__details">
+      <summary class="settings__small-text">Advanced: view/edit raw JSON</summary>
+      <textarea class="textarea" id="customDomainGroupsJson"></textarea>
+      <div class="settings__small-text">Format: [{"title":"Chess","domains":["chess.com","chessly.com"]}]</div>
     </details>
   </div>
 
-  <div class="row">
-    <button id="save">Save</button>
-    <button id="reset">Reset to defaults</button>
-    <span class="status" id="status"></span>
+  <div class="settings__row">
+    <button class="button" id="save">Save</button>
+    <button class="button" id="reset">Reset to defaults</button>
+    <span class="settings__inline-status" id="status"></span>
   </div>
 
-  <div class="row">
+  <div class="settings__row">
   <h2>Privacy & Permissions</h2>
-  <div class="small">
+  <div class="settings__small-text">
     <p><strong>Tab access:</strong> SumTabs needs access to tab URLs in order to group tabs by domain.
     All URL processing happens locally inside your browser.
     No tab data is transmitted anywhere.</p>

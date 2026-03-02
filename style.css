@@ -1,0 +1,110 @@
+:root {
+  --font-family-base: system-ui, sans-serif;
+  --font-size-base: 14px;
+  --color-text-muted: #555;
+  --color-border: #ddd;
+  --color-bg-muted: #fafafa;
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+}
+
+/* Base resets */
+.page {
+  margin: 0;
+}
+
+/* Layout blocks */
+.popup {
+  font-family: var(--font-family-base);
+  font-size: 13px;
+  margin: var(--spacing-md);
+  width: 280px;
+}
+
+.settings {
+  font-family: var(--font-family-base);
+  font-size: var(--font-size-base);
+  margin: 16px;
+  max-width: 900px;
+}
+
+.settings__row {
+  margin: 14px 0;
+}
+
+.settings__field-label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.settings__small-text {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.settings__inline-status {
+  margin-left: 10px;
+}
+
+.settings__details {
+  margin-top: 10px;
+}
+
+.settings__details-note {
+  margin-top: var(--spacing-sm);
+}
+
+/* Component blocks */
+.button {
+  padding: var(--spacing-sm) var(--spacing-md);
+}
+
+.button--full-width {
+  width: 100%;
+  margin: 6px 0;
+}
+
+.checkbox-field__input {
+  margin-right: var(--spacing-xs);
+}
+
+.input-text {
+  width: 100%;
+  padding: 6px;
+}
+
+.textarea {
+  width: 100%;
+  min-height: 110px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.bundle-editor {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: var(--spacing-md);
+  background: var(--color-bg-muted);
+}
+
+.bundle-editor__toolbar {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: center;
+  margin-bottom: var(--spacing-md);
+}
+
+.bundle-editor__select {
+  flex: 1;
+  padding: 6px;
+}
+
+.bundle-editor__row {
+  margin: 14px 0;
+}
+
+/* Modifiers */
+.popup__description--muted {
+  margin-top: var(--spacing-sm);
+}
