@@ -215,9 +215,22 @@ async function ensureGroupColor(groupId, color) {
     }
 }
 
+async function forceGroupHeaderColorRefresh(groupId) {
+    if (groupId == null || groupId === NONE) return;
+
+    try {
+        const group = await chrome.tabGroups.get(groupId);
+        const wasCollapsed = !!group?.collapsed;
+
+        await setGroupCollapsed(groupId, !wasCollapsed);
+        await setGroupCollapsed(groupId, wasCollapsed);
+    } catch {}
+}
+
 async function updateManagedGroupColorsFromSettings() {
     const tabs = await chrome.tabs.query({});
     const windowIdsNeedingRenderWorkaround = new Set();
+    const groupsNeedingHeaderRefresh = new Set();
     const seenGroupIds = new Set();
 
     for (const tab of tabs) {
@@ -233,9 +246,14 @@ async function updateManagedGroupColorsFromSettings() {
         if (!VALID_GROUP_COLORS.has(desiredColor)) continue;
 
         const didUpdateColor = await ensureGroupColor(groupId, desiredColor);
-        if (didUpdateColor && tab.windowId != null) {
-            windowIdsNeedingRenderWorkaround.add(tab.windowId);
+        if (didUpdateColor) {
+            groupsNeedingHeaderRefresh.add(groupId);
+            if (tab.windowId != null) windowIdsNeedingRenderWorkaround.add(tab.windowId);
         }
+    }
+
+    for (const groupId of groupsNeedingHeaderRefresh) {
+        await forceGroupHeaderColorRefresh(groupId);
     }
 
     for (const windowId of windowIdsNeedingRenderWorkaround) {
