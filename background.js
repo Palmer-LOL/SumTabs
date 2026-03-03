@@ -454,9 +454,9 @@ async function maybeGroupTab(tab, groupIdentity) {
             acquireMutationLock(300);
             await chrome.tabs.group({ tabIds: [tab.id], groupId: existingGroupId });
             const didRenameGroup = await ensureGroupTitle(existingGroupId, groupIdentity);
-            await ensureGroupColor(existingGroupId, desiredColor);
+            const didChangeColor = await ensureGroupColor(existingGroupId, desiredColor);
             await expandGroupIfCollapsed(existingGroupId);
-            if (didRenameGroup) {
+            if (didRenameGroup || didChangeColor) {
                 await runChromiumGroupTitleRenderWorkaround(tab.windowId);
             }
         } catch {}
