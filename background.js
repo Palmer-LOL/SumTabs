@@ -54,6 +54,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "sync") return;
     for (const [k, v] of Object.entries(changes)) settings[k] = v.newValue;
     rebuildDerived();
+
+    if (Object.prototype.hasOwnProperty.call(changes, "customDomainGroups")) {
+        void updateManagedGroupColorsFromSettings();
+    }
 });
 
 let settingsReady = loadSettings();
@@ -208,6 +212,87 @@ async function ensureGroupColor(groupId, color) {
         return true;
     } catch {
         return false;
+    }
+}
+
+async function recreateManagedGroupWithColor(groupId, desiredColor) {
+    if (groupId == null || groupId === NONE) return { changed: false, windowId: null, newGroupId: null };
+    if (!VALID_GROUP_COLORS.has(desiredColor)) return { changed: false, windowId: null, newGroupId: null };
+
+    try {
+        const group = await chrome.tabGroups.get(groupId);
+        const title = group?.title ?? null;
+        const wasCollapsed = !!group?.collapsed;
+        if (!title?.startsWith(AUTO_GROUP_PREFIX)) return { changed: false, windowId: null, newGroupId: null };
+        if (group?.color === desiredColor) return { changed: false, windowId: null, newGroupId: null };
+
+        const groupedTabs = await chrome.tabs.query({ groupId });
+        const movableTabIds = groupedTabs
+        .filter(t => t && !t.pinned && t.id != null)
+        .map(t => t.id);
+
+        if (movableTabIds.length === 0) return { changed: false, windowId: null, newGroupId: null };
+
+        acquireMutationLock(450);
+        const newGroupId = await chrome.tabs.group({ tabIds: movableTabIds });
+        groupTitleCache.delete(groupId);
+
+        await chrome.tabGroups.update(newGroupId, {
+            title,
+            color: desiredColor,
+            collapsed: wasCollapsed,
+        });
+
+        groupTitleCache.set(newGroupId, title);
+
+        return {
+            changed: true,
+            windowId: group?.windowId ?? groupedTabs[0]?.windowId ?? null,
+            newGroupId,
+        };
+    } catch {
+        return { changed: false, windowId: null, newGroupId: null };
+    }
+}
+
+async function updateManagedGroupColorsFromSettings() {
+    const tabs = await chrome.tabs.query({});
+    const windowIdsNeedingRenderWorkaround = new Set();
+    const seenGroupIds = new Set();
+
+    for (const tab of tabs) {
+        const groupId = tab.groupId;
+        if (groupId == null || groupId === NONE) continue;
+        if (seenGroupIds.has(groupId)) continue;
+        seenGroupIds.add(groupId);
+
+        const title = await getGroupTitle(groupId);
+        if (!title?.startsWith(AUTO_GROUP_PREFIX)) continue;
+
+        const desiredColor = customIdentityToColor.get(title);
+        if (!VALID_GROUP_COLORS.has(desiredColor)) continue;
+
+        const result = await recreateManagedGroupWithColor(groupId, desiredColor);
+        if (!result.changed) continue;
+
+        if (result.newGroupId != null) {
+            await ensureGroupTitle(result.newGroupId, title);
+        }
+
+        if (result.windowId != null) {
+            windowIdsNeedingRenderWorkaround.add(result.windowId);
+        }
+    }
+
+    for (const windowId of windowIdsNeedingRenderWorkaround) {
+        await runChromiumGroupTitleRenderWorkaround(windowId);
+
+        if (COLLAPSE_OTHER_GROUPS_ON_NAV_EVENTS) {
+            const [activeTab] = await chrome.tabs.query({ windowId, active: true });
+            if (activeTab?.id != null) {
+                await collapseAllGroupsExcept(windowId, activeTab.groupId);
+            }
+        }
     }
 }
 
