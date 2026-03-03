@@ -199,6 +199,19 @@ async function ensureGroupTitle(groupId, title) {
     }
 }
 
+async function reassertGroupTitle(groupId, title) {
+    if (groupId == null || groupId === NONE) return false;
+
+    try {
+        acquireMutationLock(250);
+        await chrome.tabGroups.update(groupId, { title });
+        groupTitleCache.set(groupId, title);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 async function ensureGroupColor(groupId, color) {
     if (groupId == null || groupId === NONE) return false;
     if (!VALID_GROUP_COLORS.has(color)) return false;
@@ -213,6 +226,19 @@ async function ensureGroupColor(groupId, color) {
     } catch {
         return false;
     }
+}
+
+async function syncManagedGroupPresentation({ groupId, title, color, windowId, forceTitleReassert = false, alwaysRunWorkaround = false }) {
+    const didSetTitle = forceTitleReassert
+        ? await reassertGroupTitle(groupId, title)
+        : await ensureGroupTitle(groupId, title);
+    const didSetColor = await ensureGroupColor(groupId, color);
+
+    if ((alwaysRunWorkaround || didSetTitle || didSetColor) && windowId != null) {
+        await runChromiumGroupTitleRenderWorkaround(windowId);
+    }
+
+    return { didSetTitle, didSetColor };
 }
 
 async function recreateManagedGroupWithColor(groupId, desiredColor) {
@@ -276,10 +302,14 @@ async function updateManagedGroupColorsFromSettings() {
         if (!result.changed) continue;
 
         if (result.newGroupId != null) {
-            await ensureGroupTitle(result.newGroupId, title);
-        }
-
-        if (result.windowId != null) {
+            await syncManagedGroupPresentation({
+                groupId: result.newGroupId,
+                title,
+                color: desiredColor,
+                windowId: result.windowId,
+                forceTitleReassert: true,
+            });
+        } else if (result.windowId != null) {
             windowIdsNeedingRenderWorkaround.add(result.windowId);
         }
     }
@@ -453,12 +483,13 @@ async function maybeGroupTab(tab, groupIdentity) {
         try {
             acquireMutationLock(300);
             await chrome.tabs.group({ tabIds: [tab.id], groupId: existingGroupId });
-            const didRenameGroup = await ensureGroupTitle(existingGroupId, groupIdentity);
-            const didChangeColor = await ensureGroupColor(existingGroupId, desiredColor);
+            await syncManagedGroupPresentation({
+                groupId: existingGroupId,
+                title: groupIdentity,
+                color: desiredColor,
+                windowId: tab.windowId,
+            });
             await expandGroupIfCollapsed(existingGroupId);
-            if (didRenameGroup || didChangeColor) {
-                await runChromiumGroupTitleRenderWorkaround(tab.windowId);
-            }
         } catch {}
         return;
     }
@@ -470,10 +501,14 @@ async function maybeGroupTab(tab, groupIdentity) {
     try {
         acquireMutationLock(350);
         const newGroupId = await chrome.tabs.group({ tabIds });
-        await ensureGroupTitle(newGroupId, groupIdentity);
-        await ensureGroupColor(newGroupId, desiredColor);
+        await syncManagedGroupPresentation({
+            groupId: newGroupId,
+            title: groupIdentity,
+            color: desiredColor,
+            windowId: tab.windowId,
+            alwaysRunWorkaround: true,
+        });
         await expandGroupIfCollapsed(newGroupId);
-        await runChromiumGroupTitleRenderWorkaround(tab.windowId);
     } catch {}
 }
 
