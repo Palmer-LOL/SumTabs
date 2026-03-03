@@ -215,22 +215,45 @@ async function ensureGroupColor(groupId, color) {
     }
 }
 
-async function forceGroupHeaderColorRefresh(groupId) {
-    if (groupId == null || groupId === NONE) return;
+async function recreateManagedGroupWithColor(groupId, desiredColor) {
+    if (groupId == null || groupId === NONE) return { changed: false, windowId: null };
+    if (!VALID_GROUP_COLORS.has(desiredColor)) return { changed: false, windowId: null };
 
     try {
         const group = await chrome.tabGroups.get(groupId);
+        const title = group?.title ?? null;
         const wasCollapsed = !!group?.collapsed;
+        if (!title?.startsWith(AUTO_GROUP_PREFIX)) return { changed: false, windowId: null };
+        if (group?.color === desiredColor) return { changed: false, windowId: null };
 
-        await setGroupCollapsed(groupId, !wasCollapsed);
-        await setGroupCollapsed(groupId, wasCollapsed);
-    } catch {}
+        const groupedTabs = await chrome.tabs.query({ groupId });
+        const movableTabIds = groupedTabs
+        .filter(t => t && !t.pinned && t.id != null)
+        .map(t => t.id);
+
+        if (movableTabIds.length === 0) return { changed: false, windowId: null };
+
+        acquireMutationLock(450);
+        const newGroupId = await chrome.tabs.group({ tabIds: movableTabIds });
+        groupTitleCache.delete(groupId);
+
+        await chrome.tabGroups.update(newGroupId, {
+            title,
+            color: desiredColor,
+            collapsed: wasCollapsed,
+        });
+
+        groupTitleCache.set(newGroupId, title);
+
+        return { changed: true, windowId: groupedTabs[0]?.windowId ?? null };
+    } catch {
+        return { changed: false, windowId: null };
+    }
 }
 
 async function updateManagedGroupColorsFromSettings() {
     const tabs = await chrome.tabs.query({});
     const windowIdsNeedingRenderWorkaround = new Set();
-    const groupsNeedingHeaderRefresh = new Set();
     const seenGroupIds = new Set();
 
     for (const tab of tabs) {
@@ -245,15 +268,10 @@ async function updateManagedGroupColorsFromSettings() {
         const desiredColor = customIdentityToColor.get(title);
         if (!VALID_GROUP_COLORS.has(desiredColor)) continue;
 
-        const didUpdateColor = await ensureGroupColor(groupId, desiredColor);
-        if (didUpdateColor) {
-            groupsNeedingHeaderRefresh.add(groupId);
-            if (tab.windowId != null) windowIdsNeedingRenderWorkaround.add(tab.windowId);
+        const result = await recreateManagedGroupWithColor(groupId, desiredColor);
+        if (result.changed && result.windowId != null) {
+            windowIdsNeedingRenderWorkaround.add(result.windowId);
         }
-    }
-
-    for (const groupId of groupsNeedingHeaderRefresh) {
-        await forceGroupHeaderColorRefresh(groupId);
     }
 
     for (const windowId of windowIdsNeedingRenderWorkaround) {
