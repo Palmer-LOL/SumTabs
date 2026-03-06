@@ -46,14 +46,25 @@ async function loadSettings() {
     rebuildDerived();
 }
 
-chrome.runtime.onStartup?.addListener(loadSettings);
-chrome.runtime.onInstalled?.addListener(loadSettings);
+chrome.runtime.onStartup?.addListener(async () => {
+    await loadSettings();
+    await ensurePinnedTabs();
+});
+
+chrome.runtime.onInstalled?.addListener(async () => {
+    await loadSettings();
+    await ensurePinnedTabs();
+});
 
 // Live-update if user changes options
 chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "sync") return;
     for (const [k, v] of Object.entries(changes)) settings[k] = v.newValue;
     rebuildDerived();
+
+    if (Object.prototype.hasOwnProperty.call(changes, "enforcePinnedTabs") || Object.prototype.hasOwnProperty.call(changes, "pinnedTabs")) {
+        ensurePinnedTabs();
+    }
 });
 
 let settingsReady = loadSettings();
@@ -108,6 +119,78 @@ const lastActiveGroupByWindow = new Map();
 const groupTitleCache = new Map(); // groupId -> title
 const lastSeenUrlByTab = new Map(); // tabId -> last seen tab.url
 const initialUrlByTab = new Map(); // tabId -> first seen http(s) URL
+
+const pinnedEnforcementInFlightByWindow = new Map();
+
+function normalizePinnedTarget(urlString) {
+    const u = safeParseUrl(String(urlString || "").trim());
+    if (!isWebUrl(u)) return null;
+    u.hash = "";
+    return u.href.toLowerCase();
+}
+
+function getPinnedTargets() {
+    if (!settings.enforcePinnedTabs) return [];
+
+    const seen = new Set();
+    const targets = [];
+    for (const raw of (settings.pinnedTabs || [])) {
+        const normalized = normalizePinnedTarget(raw);
+        if (!normalized || seen.has(normalized)) continue;
+        seen.add(normalized);
+        targets.push({ url: normalized });
+    }
+    return targets;
+}
+
+async function ensurePinnedTabsForWindow(windowId) {
+    const targets = getPinnedTargets();
+    if (targets.length === 0 || windowId == null) return;
+
+    if (pinnedEnforcementInFlightByWindow.has(windowId)) {
+        return pinnedEnforcementInFlightByWindow.get(windowId);
+    }
+
+    const task = (async () => {
+        try {
+            const win = await chrome.windows.get(windowId);
+            if (!win || win.type !== "normal") return;
+
+            const tabs = await chrome.tabs.query({ windowId });
+            const existing = new Set();
+            for (const tab of tabs) {
+                if (!tab?.pinned || !tab.url) continue;
+                const normalized = normalizePinnedTarget(tab.url);
+                if (normalized) existing.add(normalized);
+            }
+
+            for (const target of targets) {
+                if (existing.has(target.url)) continue;
+                acquireMutationLock(250);
+                await chrome.tabs.create({ windowId, url: target.url, pinned: true, active: false });
+                existing.add(target.url);
+            }
+        } catch {}
+    })();
+
+    pinnedEnforcementInFlightByWindow.set(windowId, task);
+    try {
+        await task;
+    } finally {
+        pinnedEnforcementInFlightByWindow.delete(windowId);
+    }
+}
+
+async function ensurePinnedTabs() {
+    const targets = getPinnedTargets();
+    if (targets.length === 0) return;
+
+    try {
+        const windows = await chrome.windows.getAll({ windowTypes: ["normal"] });
+        await Promise.all(windows.map((w) => ensurePinnedTabsForWindow(w.id)));
+    } catch {}
+}
+
 
 function safeParseUrl(urlString) {
     try { return new URL(urlString); } catch { return null; }
@@ -512,6 +595,39 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
         await settingsReady;
         if (underMutationLock()) return;
         await handleActivation(activeInfo.tabId, activeInfo.windowId);
+    } catch {}
+});
+
+chrome.windows.onCreated.addListener(async (win) => {
+    try {
+        await settingsReady;
+        if (!win || win.type !== "normal") return;
+        await ensurePinnedTabsForWindow(win.id);
+    } catch {}
+});
+
+chrome.tabs.onRemoved.addListener(async (_tabId, removeInfo) => {
+    try {
+        await settingsReady;
+        if (!settings.enforcePinnedTabs) return;
+        if (!removeInfo || removeInfo.windowId == null || removeInfo.isWindowClosing) return;
+        await ensurePinnedTabsForWindow(removeInfo.windowId);
+    } catch {}
+});
+
+chrome.tabs.onUpdated.addListener(async (_tabId, changeInfo, tab) => {
+    try {
+        await settingsReady;
+        if (!settings.enforcePinnedTabs) return;
+        if (!tab || tab.windowId == null) return;
+
+        const hasRelevantChange = Object.prototype.hasOwnProperty.call(changeInfo, "pinned") || !!changeInfo.url || !!changeInfo.status;
+        if (!hasRelevantChange) return;
+
+        const win = await chrome.windows.get(tab.windowId);
+        if (!win || win.type !== "normal") return;
+
+        await ensurePinnedTabsForWindow(tab.windowId);
     } catch {}
 });
 
