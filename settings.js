@@ -52,6 +52,11 @@ function arrayToLines(arr) {
     return (arr || []).join("\n");
 }
 
+function syncPinnedTabsEnabledState() {
+    const enabled = $("enforcePinnedTabs").checked;
+    $("pinnedTabs").disabled = !enabled;
+}
+
 function setStatus(msg, ok = true) {
     const el = $("status");
     el.textContent = msg;
@@ -148,6 +153,9 @@ async function load() {
     $("collapseOtherGroupsOnNavEvents").checked = !!stored.collapseOtherGroupsOnNavEvents;
     $("ignoreInitialTabUrlForGrouping").checked = !!stored.ignoreInitialTabUrlForGrouping;
     $("ignoreInitialTabUrlForEnforcement").checked = !!stored.ignoreInitialTabUrlForEnforcement;
+    $("enforcePinnedTabs").checked = !!stored.enforcePinnedTabs;
+    $("pinnedTabs").value = arrayToLines(stored.pinnedTabs);
+    syncPinnedTabsEnabledState();
 
     $("commonMultipartSuffixes").value = arrayToLines(stored.commonMultipartSuffixes);
     $("excludedFromRootCollapse").value = arrayToLines(stored.excludedFromRootCollapse);
@@ -178,6 +186,8 @@ async function save() {
         collapseOtherGroupsOnNavEvents: $("collapseOtherGroupsOnNavEvents").checked,
         ignoreInitialTabUrlForGrouping: $("ignoreInitialTabUrlForGrouping").checked,
         ignoreInitialTabUrlForEnforcement: $("ignoreInitialTabUrlForEnforcement").checked,
+        enforcePinnedTabs: $("enforcePinnedTabs").checked,
+        pinnedTabs: linesToArray($("pinnedTabs").value),
         commonMultipartSuffixes: linesToArray($("commonMultipartSuffixes").value),
         excludedFromRootCollapse: linesToArray($("excludedFromRootCollapse").value),
         customDomainGroups: customGroups,
@@ -215,6 +225,8 @@ $("groupColor").addEventListener("change", () => {
     updateSelectedGroupFromInputs();
     syncAdvancedJsonFromUi();
 });
+
+$("enforcePinnedTabs").addEventListener("change", syncPinnedTabsEnabledState);
 
 $("addGroup").addEventListener("click", () => {
     updateSelectedGroupFromInputs();

@@ -21,6 +21,13 @@ The extension runs entirely in the browser â€” no network calls, no analytics â€
 
 ---
 
+### Pinned Tab Enforcement (Optional)
+
+- **Optional pinned-tab enforcement.**  
+  Enable a setting to keep a user-defined list of HTTP(S) URLs pinned in every **normal** browser window. If one is closed or unpinned, SumTabs recreates it as an inactive pinned tab so focus stays on your current tab.
+
+---
+
 ### Custom Grouping Rules
 
 - **Custom bundles.**  
@@ -63,6 +70,7 @@ To configure behavior:
 - Open the extension popup and click **Open Settings**.
 - Toggle **Collapse other groups when navigating/creating tabs** to enable or disable focus mode.
 - Toggle **Ignore initial tab URL for grouping** and **Ignore initial tab URL for enforcement** to avoid grouping while tabs are still on their initial load.
+- Enable **Enforce pinned tabs** and add **Pinned tab URLs** (one per line) to keep specific pages pinned in normal windows without stealing focus.
 - Add entries under **Public-suffix overrides** (one per line) to tweak root-domain detection.
 - Add **Excluded hostnames** (one per line) to prevent specific subdomains from collapsing.
 - Use the **Custom domain bundles** editor to create/manage domain groupings and optionally choose a bundle color.

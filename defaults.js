@@ -4,6 +4,8 @@ export const DEFAULTS = {
 
     ignoreInitialTabUrlForGrouping: true,
     ignoreInitialTabUrlForEnforcement: true,
+    enforcePinnedTabs: false,
+    pinnedTabs: [],
 
     // editable “mini PSL”
     commonMultipartSuffixes: [
