@@ -13,6 +13,7 @@ let AUTO_GROUP_PREFIX = DEFAULTS.autoGroupPrefix;
 let COLLAPSE_OTHER_GROUPS_ON_NAV_EVENTS = DEFAULTS.collapseOtherGroupsOnNavEvents;
 let IGNORE_INITIAL_TAB_URL_FOR_GROUPING = DEFAULTS.ignoreInitialTabUrlForGrouping;
 let IGNORE_INITIAL_TAB_URL_FOR_ENFORCEMENT = DEFAULTS.ignoreInitialTabUrlForEnforcement;
+let CREATE_PINNED_TABS_ON_NEW_WINDOW = DEFAULTS.createPinnedTabsOnNewWindow;
 
 let customDomainToIdentity = new Map();
 let customIdentityToColor = new Map();
@@ -23,6 +24,7 @@ function rebuildDerived() {
     COLLAPSE_OTHER_GROUPS_ON_NAV_EVENTS = !!settings.collapseOtherGroupsOnNavEvents;
     IGNORE_INITIAL_TAB_URL_FOR_GROUPING = !!settings.ignoreInitialTabUrlForGrouping;
     IGNORE_INITIAL_TAB_URL_FOR_ENFORCEMENT = !!settings.ignoreInitialTabUrlForEnforcement;
+    CREATE_PINNED_TABS_ON_NEW_WINDOW = !!settings.createPinnedTabsOnNewWindow;
 
     COMMON_MULTIPART_SUFFIXES = new Set((settings.commonMultipartSuffixes ?? []).map(s => String(s).toLowerCase()));
     EXCLUDED_FROM_ROOT_COLLAPSE = new Set((settings.excludedFromRootCollapse ?? []).map(s => String(s).toLowerCase()));
@@ -122,30 +124,59 @@ const initialUrlByTab = new Map(); // tabId -> first seen http(s) URL
 
 const pinnedEnforcementInFlightByWindow = new Map();
 
-function normalizePinnedTarget(urlString) {
-    const u = safeParseUrl(String(urlString || "").trim());
-    if (!isWebUrl(u)) return null;
-    u.hash = "";
-    return u.href.toLowerCase();
+function parsePinnedEntry(rawEntry) {
+    const raw = String(rawEntry || "").trim();
+    if (!raw) return null;
+
+    const asUrl = safeParseUrl(raw);
+    if (isWebUrl(asUrl)) {
+        return {
+            createUrl: asUrl.href,
+            hostname: asUrl.hostname.toLowerCase(),
+        };
+    }
+
+    const asHostnameUrl = safeParseUrl(`https://${raw}`);
+    if (!isWebUrl(asHostnameUrl) || asHostnameUrl.pathname !== "/" || asHostnameUrl.search || asHostnameUrl.hash) return null;
+
+    return {
+        createUrl: asHostnameUrl.href,
+        hostname: asHostnameUrl.hostname.toLowerCase(),
+    };
 }
 
 function getPinnedTargets() {
-    if (!settings.enforcePinnedTabs) return [];
-
-    const seen = new Set();
+    const seenHostnames = new Set();
     const targets = [];
+
     for (const raw of (settings.pinnedTabs || [])) {
-        const normalized = normalizePinnedTarget(raw);
-        if (!normalized || seen.has(normalized)) continue;
-        seen.add(normalized);
-        targets.push({ url: normalized });
+        const parsed = parsePinnedEntry(raw);
+        if (!parsed || seenHostnames.has(parsed.hostname)) continue;
+        seenHostnames.add(parsed.hostname);
+        targets.push(parsed);
     }
+
     return targets;
+}
+
+async function createPinnedTabsForWindow(windowId) {
+    const targets = getPinnedTargets();
+    if (!CREATE_PINNED_TABS_ON_NEW_WINDOW || targets.length === 0 || windowId == null) return;
+
+    try {
+        const win = await chrome.windows.get(windowId);
+        if (!win || win.type !== "normal") return;
+
+        for (const target of targets) {
+            acquireMutationLock(250);
+            await chrome.tabs.create({ windowId, url: target.createUrl, pinned: true, active: false });
+        }
+    } catch {}
 }
 
 async function ensurePinnedTabsForWindow(windowId) {
     const targets = getPinnedTargets();
-    if (targets.length === 0 || windowId == null) return;
+    if (!settings.enforcePinnedTabs || targets.length === 0 || windowId == null) return;
 
     if (pinnedEnforcementInFlightByWindow.has(windowId)) {
         return pinnedEnforcementInFlightByWindow.get(windowId);
@@ -157,18 +188,19 @@ async function ensurePinnedTabsForWindow(windowId) {
             if (!win || win.type !== "normal") return;
 
             const tabs = await chrome.tabs.query({ windowId });
-            const existing = new Set();
+            const existingHostnames = new Set();
             for (const tab of tabs) {
                 if (!tab?.pinned || !tab.url) continue;
-                const normalized = normalizePinnedTarget(tab.url);
-                if (normalized) existing.add(normalized);
+                const u = safeParseUrl(tab.url);
+                if (!isWebUrl(u)) continue;
+                existingHostnames.add(u.hostname.toLowerCase());
             }
 
             for (const target of targets) {
-                if (existing.has(target.url)) continue;
+                if (existingHostnames.has(target.hostname)) continue;
                 acquireMutationLock(250);
-                await chrome.tabs.create({ windowId, url: target.url, pinned: true, active: false });
-                existing.add(target.url);
+                await chrome.tabs.create({ windowId, url: target.createUrl, pinned: true, active: false });
+                existingHostnames.add(target.hostname);
             }
         } catch {}
     })();
@@ -183,7 +215,7 @@ async function ensurePinnedTabsForWindow(windowId) {
 
 async function ensurePinnedTabs() {
     const targets = getPinnedTargets();
-    if (targets.length === 0) return;
+    if (!settings.enforcePinnedTabs || targets.length === 0) return;
 
     try {
         const windows = await chrome.windows.getAll({ windowTypes: ["normal"] });
@@ -602,6 +634,7 @@ chrome.windows.onCreated.addListener(async (win) => {
     try {
         await settingsReady;
         if (!win || win.type !== "normal") return;
+        await createPinnedTabsForWindow(win.id);
         await ensurePinnedTabsForWindow(win.id);
     } catch {}
 });

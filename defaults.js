@@ -4,6 +4,7 @@ export const DEFAULTS = {
 
     ignoreInitialTabUrlForGrouping: true,
     ignoreInitialTabUrlForEnforcement: true,
+    createPinnedTabsOnNewWindow: false,
     enforcePinnedTabs: false,
     pinnedTabs: [],
 
