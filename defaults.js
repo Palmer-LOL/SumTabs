@@ -8,7 +8,7 @@ export const DEFAULTS = {
     enforcePinnedTabs: false,
     pinnedTabs: [],
 
-    // editable “mini PSL”
+    // Storage key kept for backward compatibility: domain-wide subdomain separation rules
     commonMultipartSuffixes: [
         "co.uk","org.uk","ac.uk","gov.uk",
         "com.au","net.au","org.au",
@@ -17,6 +17,7 @@ export const DEFAULTS = {
         "com.br","com.mx",
     ],
 
+    // Storage key kept for backward compatibility: exact-host separation rules
     excludedFromRootCollapse: [
         // "docs.google.com",
     ],

@@ -48,15 +48,15 @@
   </div>
 
   <div class="settings__row">
-    <label class="settings__field-label" for="commonMultipartSuffixes">Public-suffix overrides (one per line)</label>
+    <label class="settings__field-label" for="commonMultipartSuffixes">Domain-wide subdomain separation rules (one per line)</label>
     <textarea class="textarea" id="commonMultipartSuffixes"></textarea>
-    <div class="settings__small-text">Examples: co.uk, com.au, github.io. These are treated like public suffixes for root-domain collapsing.</div>
+    <div class="settings__small-text">Examples: co.uk, com.au, github.io. Use these to keep whole subdomain families separated when a shared suffix would otherwise collapse them together.</div>
   </div>
 
   <div class="settings__row">
-    <label class="settings__field-label" for="excludedFromRootCollapse">Excluded hostnames (one per line)</label>
+    <label class="settings__field-label" for="excludedFromRootCollapse">Exact-host separation rules (one per line)</label>
     <textarea class="textarea" id="excludedFromRootCollapse"></textarea>
-    <div class="settings__small-text">Exact hostnames that should not collapse to their root domain (e.g., docs.google.com).</div>
+    <div class="settings__small-text">Exact hostnames that should stay separate from their broader domain grouping (e.g., docs.google.com).</div>
   </div>
 
   <div class="settings__row">
