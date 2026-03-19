@@ -22,6 +22,25 @@
     <div class="settings__small-text" id="groupingExplanation">Checking this tab’s grouping status…</div>
   </div>
 
+  <div class="popup__status-card" id="quickActionsCard" hidden>
+    <div class="popup__status-row">
+      <div class="popup__status-label">Quick actions for this tab</div>
+      <div class="settings__small-text">Update separation rules without opening Settings.</div>
+    </div>
+
+    <div class="popup__status-row" id="exactActionRow">
+      <div class="popup__status-value" id="exactActionLabel">Separate only this hostname</div>
+      <div class="settings__small-text" id="exactActionStatus"></div>
+      <button class="button button--full-width" id="toggleExactAction" type="button">Add rule</button>
+    </div>
+
+    <div class="popup__status-row" id="domainActionRow">
+      <div class="popup__status-value" id="domainActionLabel">Separate all matching subdomains</div>
+      <div class="settings__small-text" id="domainActionStatus"></div>
+      <button class="button button--full-width" id="toggleDomainAction" type="button">Add rule</button>
+    </div>
+  </div>
+
   <button class="button button--full-width" id="openSettings">Open Settings</button>
 
   <div class="settings__small-text popup__description--muted">
