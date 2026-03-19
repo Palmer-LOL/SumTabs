@@ -8,6 +8,20 @@
 <body class="page popup">
   <div class="popup__title"><strong>SumTabs</strong></div>
 
+  <div class="popup__status-card" id="statusCard">
+    <div class="popup__status-row">
+      <div class="popup__status-label">Active hostname</div>
+      <div class="popup__status-value" id="activeHostname">Loading…</div>
+    </div>
+
+    <div class="popup__status-row">
+      <div class="popup__status-label">Grouping target</div>
+      <div class="popup__status-value" id="groupingTarget">Loading…</div>
+    </div>
+
+    <div class="settings__small-text" id="groupingExplanation">Checking this tab’s grouping status…</div>
+  </div>
+
   <button class="button button--full-width" id="openSettings">Open Settings</button>
 
   <div class="settings__small-text popup__description--muted">
