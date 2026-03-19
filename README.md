@@ -37,11 +37,11 @@ The extension runs entirely in the browser — no network calls, no analytics �
   Example: A “News” bundle containing `nytimes.com` and `theatlantic.com`.  
   Tabs matching any listed domain will be grouped together under `∑ News`. You can also assign a specific tab-group color per bundle.
 
-- **Public-suffix overrides.**  
-  Includes a configurable “mini PSL” list (e.g. `co.uk`, `com.au`) used when determining root domains. You can extend this list on the settings page.
+- **Domain-wide subdomain separation rules.**  
+  Includes a configurable list (e.g. `co.uk`, `com.au`) used to keep whole subdomain families separated when a shared suffix would otherwise collapse them together. You can extend this list on the settings page.
 
-- **Excluded hostnames.**  
-  Prevent specific subdomains (e.g. `docs.google.com`) from collapsing to their root domain.
+- **Exact-host separation rules.**  
+  Keep specific hostnames (e.g. `docs.google.com`) separate from their broader domain grouping.
 
 - **Advanced JSON editing.**  
   A collapsible section in the settings page allows direct editing of the custom bundle configuration in JSON format.
@@ -75,8 +75,8 @@ To configure behavior:
 - Configure **Pinned tab hostnames or URLs** (one per line).
 - Enable **Create pinned tabs on new window** to seed new normal windows with pinned tabs.
 - Enable **Enforce pinned tabs continuously** to keep pinned tabs present by hostname (regardless of URL path) without stealing focus.
-- Add entries under **Public-suffix overrides** (one per line) to tweak root-domain detection.
-- Add **Excluded hostnames** (one per line) to prevent specific subdomains from collapsing.
+- Add entries under **Domain-wide subdomain separation rules** (one per line) to keep matching subdomain families separate when needed.
+- Add **Exact-host separation rules** (one per line) to keep specific hosts separate from their broader domain grouping.
 - Use the **Custom domain bundles** editor to create/manage domain groupings and optionally choose a bundle color.
 
 ---
@@ -87,7 +87,7 @@ To configure behavior:
   Core grouping logic. Listens to tab creation, updates, activation, and window focus events. Includes throttling and re-entrancy safeguards to prevent event storms.
 
 - **`defaults.js`**  
-  Defines default settings, including prefix, collapse flags, public-suffix overrides, and custom bundles.
+  Defines default settings, including prefix, collapse flags, backward-compatible separation-rule defaults, and custom bundles.
 
 - **`settings.html` + `settings.js`**  
   Implements the options page UI and storage logic. Uses semantic, BEM-style class names (e.g. `.settings__row`, `.bundle-editor__toolbar`).

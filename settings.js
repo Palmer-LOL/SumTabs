@@ -158,6 +158,7 @@ async function load() {
     $("pinnedTabs").value = arrayToLines(stored.pinnedTabs);
     syncPinnedTabsEnabledState();
 
+    // Keep legacy storage keys; the UI now describes these as separation rules.
     $("commonMultipartSuffixes").value = arrayToLines(stored.commonMultipartSuffixes);
     $("excludedFromRootCollapse").value = arrayToLines(stored.excludedFromRootCollapse);
 
@@ -190,6 +191,7 @@ async function save() {
         createPinnedTabsOnNewWindow: $("createPinnedTabsOnNewWindow").checked,
         enforcePinnedTabs: $("enforcePinnedTabs").checked,
         pinnedTabs: linesToArray($("pinnedTabs").value),
+        // Keep the stored key names backward-compatible with existing sync data.
         commonMultipartSuffixes: linesToArray($("commonMultipartSuffixes").value),
         excludedFromRootCollapse: linesToArray($("excludedFromRootCollapse").value),
         customDomainGroups: customGroups,

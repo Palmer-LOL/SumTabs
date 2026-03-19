@@ -1,6 +1,7 @@
-// Auto-group tabs by root/registrable domain (with exceptions) + strict membership enforcement.
+// Auto-group tabs by root/registrable domain (with domain-wide + exact-host separation rules) + strict membership enforcement.
 // SAFETY VERSION: adds throttles + re-entrancy guards to prevent event storms / runaway loops.
 import { DEFAULTS } from "./defaults.js";
+import { resolveGroupingForHostname } from "./grouping.js";
 
 // -------------------- SETTINGS --------------------
 
@@ -15,7 +16,10 @@ let IGNORE_INITIAL_TAB_URL_FOR_GROUPING = DEFAULTS.ignoreInitialTabUrlForGroupin
 let IGNORE_INITIAL_TAB_URL_FOR_ENFORCEMENT = DEFAULTS.ignoreInitialTabUrlForEnforcement;
 let CREATE_PINNED_TABS_ON_NEW_WINDOW = DEFAULTS.createPinnedTabsOnNewWindow;
 
-let customDomainToIdentity = new Map();
+let customBundleMaps = {
+    exactHostnameToBundleTitle: new Map(),
+    groupKeyToBundleTitle: new Map(),
+};
 let customIdentityToColor = new Map();
 const VALID_GROUP_COLORS = new Set(["grey", "blue", "red", "yellow", "green", "pink", "purple", "cyan", "orange"]);
 
@@ -29,16 +33,26 @@ function rebuildDerived() {
     COMMON_MULTIPART_SUFFIXES = new Set((settings.commonMultipartSuffixes ?? []).map(s => String(s).toLowerCase()));
     EXCLUDED_FROM_ROOT_COLLAPSE = new Set((settings.excludedFromRootCollapse ?? []).map(s => String(s).toLowerCase()));
 
-    customDomainToIdentity = new Map();
+    customBundleMaps = {
+        exactHostnameToBundleTitle: new Map(),
+        groupKeyToBundleTitle: new Map(),
+    };
     customIdentityToColor = new Map();
     for (const g of (settings.customDomainGroups ?? [])) {
         if (!g?.title || !Array.isArray(g.domains)) continue;
-        const ident = AUTO_GROUP_PREFIX + g.title;
+
+        const title = String(g.title).trim();
+        if (!title) continue;
+
+        const ident = AUTO_GROUP_PREFIX + title;
         const color = String(g?.color ?? "").trim().toLowerCase();
         if (VALID_GROUP_COLORS.has(color)) customIdentityToColor.set(ident, color);
+
         for (const d of g.domains) {
             const dl = String(d).trim().toLowerCase();
-            if (dl) customDomainToIdentity.set(dl, ident);
+            if (!dl) continue;
+            customBundleMaps.exactHostnameToBundleTitle.set(dl, title);
+            customBundleMaps.groupKeyToBundleTitle.set(dl, title);
         }
     }
 }
@@ -237,42 +251,23 @@ function getHostnameFromTab(tab, changeInfo) {
     return u.hostname;
 }
 
-function getRootDomain(hostname) {
-    const isIPv4 = /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname);
-    if (isIPv4) return hostname;
-
-    const parts = hostname.split(".").filter(Boolean);
-    if (parts.length <= 2) return hostname;
-
-    const last2 = parts.slice(-2).join(".");
-    const last3 = parts.slice(-3).join(".");
-
-    if (COMMON_MULTIPART_SUFFIXES.has(last2)) return last3;
-    return last2;
+function getGroupingForHostname(hostname) {
+    return resolveGroupingForHostname({
+        hostname,
+        commonMultipartSuffixes: COMMON_MULTIPART_SUFFIXES,
+        excludedFromRootCollapse: EXCLUDED_FROM_ROOT_COLLAPSE,
+        customBundleMaps,
+        managedPrefix: AUTO_GROUP_PREFIX,
+    });
 }
 
-function getGroupKey(hostname) {
-    if (EXCLUDED_FROM_ROOT_COLLAPSE.has(hostname)) return hostname;
-    return getRootDomain(hostname);
-}
+function resolveTabGrouping(tab, changeInfo) {
+    if (!tab || tab.pinned) return null;
 
-// Resolve the *identity string* we use as the group title AND the grouping key.
-// - Custom bundles win (based on exact hostname OR root-domain key match)
-// - Otherwise default to prefixed normal group key
-function getIdentityForHostname(hostname) {
-    const h = (hostname || "").toLowerCase();
-    const root = getGroupKey(hostname).toLowerCase();
+    const hostname = getHostnameFromTab(tab, changeInfo);
+    if (!hostname) return null;
 
-    // Try exact hostname match first
-    const byHost = customDomainToIdentity.get(h);
-    if (byHost) return byHost;
-
-    // Then try root-domain match (this makes "chess.com" cover "www.chess.com", etc.)
-    const byRoot = customDomainToIdentity.get(root);
-    if (byRoot) return byRoot;
-
-    // Default identity is prefixed root key
-    return AUTO_GROUP_PREFIX + getGroupKey(hostname);
+    return getGroupingForHostname(hostname);
 }
 
 async function withSettings(fn) {
@@ -408,14 +403,8 @@ async function getMatchingTabs(windowId, groupIdentity) {
     const matches = [];
 
     for (const t of tabs) {
-        if (t.pinned) continue;
-        if (!t.url) continue;
-
-        const u = safeParseUrl(t.url);
-        if (!isWebUrl(u)) continue;
-
-        const ident = getIdentityForHostname(u.hostname);
-        if (ident === groupIdentity) matches.push(t);
+        const grouping = resolveTabGrouping(t);
+        if (grouping?.identity === groupIdentity) matches.push(t);
     }
     return matches;
 }
@@ -432,7 +421,7 @@ async function findExistingGroupIdForIdentity(matches, groupIdentity) {
     return null;
 }
 
-async function enforceGroupMembershipForTab(tab, currentIdentity) {
+async function enforceGroupMembershipForTab(tab, currentGrouping) {
     if (!tab || tab.id == null) return;
     if (tab.pinned) return;
 
@@ -451,13 +440,16 @@ async function enforceGroupMembershipForTab(tab, currentIdentity) {
     // Only police groups created/managed by this extension.
     if (!title.startsWith(AUTO_GROUP_PREFIX)) return;
 
+    const currentIdentity = currentGrouping?.identity;
+    if (!currentIdentity) return;
+
     // If tab no longer matches the group's identity, ungroup it.
     if (title !== currentIdentity) {
         await ungroupTab(tab.id);
     }
 }
 
-async function maybeGroupTab(tab, groupIdentity) {
+async function maybeGroupTab(tab, currentGrouping) {
     if (!tab || tab.id == null || tab.windowId == null) return;
     if (tab.pinned) return;
 
@@ -468,8 +460,11 @@ async function maybeGroupTab(tab, groupIdentity) {
         if (initialUrl && currentUrl && currentUrl === initialUrl) return;
     }
 
+    const groupIdentity = currentGrouping?.identity;
+    if (!groupIdentity) return;
+
     // Membership enforcement first
-    await enforceGroupMembershipForTab(tab, groupIdentity);
+    await enforceGroupMembershipForTab(tab, currentGrouping);
 
     const matches = await getMatchingTabs(tab.windowId, groupIdentity);
 
@@ -563,8 +558,8 @@ chrome.tabs.onCreated.addListener(async (tab) => {
         // Record the first http(s) URL we see for this tab as its “initial URL”.
         if (u?.href) initialUrlByTab.set(tab.id, u.href);
 
-        const identity = getIdentityForHostname(u.hostname);
-        await maybeGroupTab(tab, identity);
+        const grouping = resolveTabGrouping(tab);
+        await maybeGroupTab(tab, grouping);
 
         if (COLLAPSE_OTHER_GROUPS_ON_NAV_EVENTS) {
             // Re-fetch the tab so we know its current groupId after grouping logic.
@@ -612,8 +607,8 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 
         lastSeenUrlByTab.set(tabId, currentUrl);
 
-        const identity = getIdentityForHostname(u.hostname);
-        await maybeGroupTab(tab, identity);
+        const grouping = resolveTabGrouping(tab, changeInfo);
+        await maybeGroupTab(tab, grouping);
 
         if (COLLAPSE_OTHER_GROUPS_ON_NAV_EVENTS) {
             const refreshed = await chrome.tabs.get(tabId);

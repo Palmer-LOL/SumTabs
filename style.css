@@ -18,8 +18,9 @@
 .popup {
   font-family: var(--font-family-base);
   font-size: 13px;
-  margin: var(--spacing-md);
-  width: 280px;
+  margin: 10px;
+  width: 264px;
+  color: #111;
 }
 
 .settings {
@@ -105,6 +106,93 @@
 }
 
 /* Modifiers */
+.popup__title {
+  margin-bottom: var(--spacing-sm);
+  line-height: 1.2;
+}
+
 .popup__description--muted {
   margin-top: var(--spacing-sm);
+  line-height: 1.4;
+}
+
+.popup__status-card {
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 10px;
+  margin: 0 0 var(--spacing-sm);
+  background: var(--color-bg-muted);
+}
+
+#statusCard {
+  display: grid;
+  gap: var(--spacing-sm);
+}
+
+#statusCard .popup__status-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+#statusCard .popup__status-label {
+  margin: 0;
+  font-size: 10px;
+}
+
+#statusCard .popup__status-value {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-height: 24px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #fff;
+  border: 1px solid #e3e3e3;
+}
+
+#quickActionsCard {
+  display: grid;
+  gap: var(--spacing-sm);
+}
+
+#quickActionsCard .popup__status-row + .popup__status-row {
+  margin-top: 0;
+}
+
+#quickActionsCard .popup__status-row:not(:first-child) {
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid #e8e8e8;
+}
+
+.popup__status-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+  margin-bottom: 2px;
+}
+
+.popup__status-value {
+  font-weight: 600;
+  word-break: break-word;
+  line-height: 1.35;
+}
+
+#groupingExplanation,
+#quickActionsCard .settings__small-text {
+  line-height: 1.4;
+}
+
+#quickActionsCard .popup__status-value {
+  margin-bottom: 2px;
+}
+
+#quickActionsCard .button--full-width {
+  margin: 6px 0 0;
+}
+
+#openSettings.button--full-width {
+  margin-top: 0;
 }
