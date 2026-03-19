@@ -61,6 +61,27 @@ export function getRootDomain(hostname, commonMultipartSuffixes) {
     };
 }
 
+export function getDomainWideSeparationRule(hostname, commonMultipartSuffixes) {
+    const normalizedHostname = toLowerString(hostname);
+    if (!normalizedHostname) return null;
+
+    const isIPv4 = /^\d{1,3}(\.\d{1,3}){3}$/.test(normalizedHostname);
+    if (isIPv4) return null;
+
+    const parts = normalizedHostname.split(".").filter(Boolean);
+    if (parts.length < 2) return null;
+
+    const { rootDomain, matchedSuffix } = getRootDomain(normalizedHostname, commonMultipartSuffixes);
+    const token = matchedSuffix || rootDomain;
+    if (!token || !token.includes(".")) return null;
+
+    return {
+        token,
+        label: `Separate all *.${token} subdomains`,
+        affectsHostname: matchedSuffix === token,
+    };
+}
+
 export function resolveGroupingForHostname({
     hostname,
     commonMultipartSuffixes,

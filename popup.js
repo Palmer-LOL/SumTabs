@@ -1,5 +1,5 @@
 import { DEFAULTS } from "./defaults.js";
-import { getRootDomain, resolveGroupingForHostname } from "./grouping.js";
+import { getDomainWideSeparationRule, resolveGroupingForHostname } from "./grouping.js";
 
 const activeHostnameEl = document.getElementById("activeHostname");
 const groupingTargetEl = document.getElementById("groupingTarget");
@@ -91,14 +91,6 @@ function tabTargetLabel(tab, grouping) {
     return getGroupingTargetLabel(grouping);
 }
 
-function getDomainWideToken(hostname, grouping, commonMultipartSuffixes) {
-    if (grouping.reason === "multipart-suffix-separation" && grouping.matchedSuffix) {
-        return grouping.matchedSuffix;
-    }
-
-    return getRootDomain(hostname, commonMultipartSuffixes).rootDomain;
-}
-
 function setActionState({
     row,
     label,
@@ -148,7 +140,7 @@ function renderQuickActions(context) {
         label: domainActionLabelEl,
         status: {
             element: domainActionStatusEl,
-            label: `Separate all *.${context.domainActionToken} subdomains`,
+            label: context.domainActionLabel,
             message: context.domainActionEnabled
                 ? (context.domainActionAffectsCurrentTab
                     ? `${context.domainActionToken} is already separating this tab from sibling subdomains.`
@@ -250,10 +242,8 @@ async function renderActiveTabStatus() {
         customBundleMaps: buildCustomBundleMaps(settings.customDomainGroups),
         managedPrefix: settings.autoGroupPrefix ?? DEFAULTS.autoGroupPrefix,
     });
-    const domainActionToken = getDomainWideToken(grouping.hostname, grouping, commonMultipartSuffixes);
-    const isIpv4Hostname = /^\d{1,3}(\.\d{1,3}){3}$/.test(grouping.hostname);
-    const domainActionAvailable = !isIpv4Hostname && domainActionToken.includes(".");
-    const domainActionAffectsCurrentTab = grouping.matchedSuffix === domainActionToken;
+    const domainAction = getDomainWideSeparationRule(grouping.hostname, commonMultipartSuffixes);
+    const domainActionAvailable = !!domainAction;
 
     setStatus({
         hostname: grouping.hostname,
@@ -265,9 +255,10 @@ async function renderActiveTabStatus() {
         hostname: grouping.hostname,
         exactActionEnabled: excludedFromRootCollapse.has(grouping.hostname),
         domainActionAvailable,
-        domainActionEnabled: domainActionAvailable && commonMultipartSuffixes.has(domainActionToken),
-        domainActionAffectsCurrentTab,
-        domainActionToken,
+        domainActionEnabled: domainActionAvailable && commonMultipartSuffixes.has(domainAction.token),
+        domainActionAffectsCurrentTab: domainAction?.affectsHostname ?? false,
+        domainActionLabel: domainAction?.label ?? "",
+        domainActionToken: domainAction?.token ?? "",
     });
 }
 
