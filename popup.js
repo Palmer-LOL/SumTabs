@@ -1,5 +1,5 @@
 import { DEFAULTS } from "./defaults.js";
-import { getDomainWideSeparationRule, resolveGroupingForHostname } from "./grouping.js";
+import { buildCustomBundleMaps, getDomainWideSeparationRule, resolveGroupingForHostname } from "./grouping.js";
 
 const activeHostnameEl = document.getElementById("activeHostname");
 const groupingTargetEl = document.getElementById("groupingTarget");
@@ -23,28 +23,6 @@ function normalizeLowerList(values) {
 
 function normalizeLowerArray(values) {
     return [...normalizeLowerList(values)];
-}
-
-function buildCustomBundleMaps(customDomainGroups) {
-    const exactHostnameToBundleTitle = new Map();
-    const rootDomainToBundleTitle = new Map();
-
-    for (const group of customDomainGroups ?? []) {
-        if (!group?.title || !Array.isArray(group.domains)) continue;
-
-        const title = String(group.title).trim();
-        if (!title) continue;
-
-        for (const domain of group.domains) {
-            const defaultGroupingKey = String(domain ?? "").trim().toLowerCase();
-            if (!defaultGroupingKey) continue;
-            const bundleInheritanceKey = defaultGroupingKey;
-            exactHostnameToBundleTitle.set(defaultGroupingKey, title);
-            rootDomainToBundleTitle.set(bundleInheritanceKey, title);
-        }
-    }
-
-    return { exactHostnameToBundleTitle, rootDomainToBundleTitle };
 }
 
 function isSupportedTabUrl(tabUrl) {
