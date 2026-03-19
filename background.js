@@ -1,4 +1,4 @@
-// Auto-group tabs by root/registrable domain (with exceptions) + strict membership enforcement.
+// Auto-group tabs by root/registrable domain (with domain-wide + exact-host separation rules) + strict membership enforcement.
 // SAFETY VERSION: adds throttles + re-entrancy guards to prevent event storms / runaway loops.
 import { DEFAULTS } from "./defaults.js";
 import { resolveGroupingForHostname } from "./grouping.js";
