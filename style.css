@@ -108,3 +108,28 @@
 .popup__description--muted {
   margin-top: var(--spacing-sm);
 }
+
+.popup__status-card {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: var(--spacing-md);
+  margin: var(--spacing-md) 0;
+  background: var(--color-bg-muted);
+}
+
+.popup__status-row + .popup__status-row {
+  margin-top: var(--spacing-sm);
+}
+
+.popup__status-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+  margin-bottom: 2px;
+}
+
+.popup__status-value {
+  font-weight: 600;
+  word-break: break-word;
+}
