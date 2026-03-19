@@ -48,15 +48,15 @@
   </div>
 
   <div class="settings__row">
-    <label class="settings__field-label" for="commonMultipartSuffixes">Domain-wide subdomain separation rules (one per line)</label>
+    <label class="settings__field-label" for="commonMultipartSuffixes">Separate all subdomains for these domains</label>
     <textarea class="textarea" id="commonMultipartSuffixes"></textarea>
-    <div class="settings__small-text">Examples: co.uk, com.au, github.io. Use these to keep whole subdomain families separated when a shared suffix would otherwise collapse them together.</div>
+    <div class="settings__small-text"><code>github.io</code> means every subdomain is treated as its own grouped site.</div>
   </div>
 
   <div class="settings__row">
-    <label class="settings__field-label" for="excludedFromRootCollapse">Exact-host separation rules (one per line)</label>
+    <label class="settings__field-label" for="excludedFromRootCollapse">Separate only these specific subdomains</label>
     <textarea class="textarea" id="excludedFromRootCollapse"></textarea>
-    <div class="settings__small-text">Exact hostnames that should stay separate from their broader domain grouping (e.g., docs.google.com).</div>
+    <div class="settings__small-text"><code>drive.google.com</code> means only that hostname is separate, while other Google subdomains still group under <code>google.com</code>.</div>
   </div>
 
   <div class="settings__row">
