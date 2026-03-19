@@ -214,6 +214,7 @@ async function renderActiveTabStatus() {
     const settings = await chrome.storage.sync.get(DEFAULTS);
     const commonMultipartSuffixes = normalizeLowerList(settings.commonMultipartSuffixes);
     const excludedFromRootCollapse = normalizeLowerList(settings.excludedFromRootCollapse);
+    // Mirror the background worker's shared precedence so the popup explanation matches runtime grouping behavior.
     const grouping = resolveGroupingForHostname({
         hostname: parsedUrl.hostname,
         commonMultipartSuffixes,

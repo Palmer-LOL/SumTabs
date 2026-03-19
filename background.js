@@ -242,6 +242,7 @@ function getHostnameFromTab(tab, changeInfo) {
 }
 
 function getGroupingForHostname(hostname) {
+    // Shared precedence lives in grouping.js: exact custom bundles first, then inherited root-domain bundles, then default separation rules.
     return resolveGroupingForHostname({
         hostname,
         commonMultipartSuffixes: COMMON_MULTIPART_SUFFIXES,
