@@ -1,7 +1,7 @@
 // Auto-group tabs by root/registrable domain (with domain-wide + exact-host separation rules) + strict membership enforcement.
 // SAFETY VERSION: adds throttles + re-entrancy guards to prevent event storms / runaway loops.
 import { DEFAULTS } from "./defaults.js";
-import { resolveGroupingForHostname } from "./grouping.js";
+import { buildCustomBundleMaps, resolveGroupingForHostname } from "./grouping.js";
 
 // -------------------- SETTINGS --------------------
 
@@ -33,10 +33,7 @@ function rebuildDerived() {
     COMMON_MULTIPART_SUFFIXES = new Set((settings.commonMultipartSuffixes ?? []).map(s => String(s).toLowerCase()));
     EXCLUDED_FROM_ROOT_COLLAPSE = new Set((settings.excludedFromRootCollapse ?? []).map(s => String(s).toLowerCase()));
 
-    customBundleMaps = {
-        exactHostnameToBundleTitle: new Map(),
-        rootDomainToBundleTitle: new Map(),
-    };
+    customBundleMaps = buildCustomBundleMaps(settings.customDomainGroups);
     customIdentityToColor = new Map();
     for (const g of (settings.customDomainGroups ?? [])) {
         if (!g?.title || !Array.isArray(g.domains)) continue;
@@ -47,14 +44,6 @@ function rebuildDerived() {
         const ident = AUTO_GROUP_PREFIX + title;
         const color = String(g?.color ?? "").trim().toLowerCase();
         if (VALID_GROUP_COLORS.has(color)) customIdentityToColor.set(ident, color);
-
-        for (const d of g.domains) {
-            const defaultGroupingKey = String(d).trim().toLowerCase();
-            if (!defaultGroupingKey) continue;
-            const bundleInheritanceKey = defaultGroupingKey;
-            customBundleMaps.exactHostnameToBundleTitle.set(defaultGroupingKey, title);
-            customBundleMaps.rootDomainToBundleTitle.set(bundleInheritanceKey, title);
-        }
     }
 }
 
