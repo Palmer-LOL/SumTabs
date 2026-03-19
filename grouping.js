@@ -17,6 +17,26 @@ function getMapValue(mapLike, key) {
     return value == null ? null : value;
 }
 
+export function buildCustomBundleMaps(customDomainGroups) {
+    const exactHostnameToBundleTitle = new Map();
+    const rootDomainToBundleTitle = new Map();
+
+    for (const group of customDomainGroups ?? []) {
+        const title = String(group?.title ?? "").trim();
+        if (!title || !Array.isArray(group?.domains)) continue;
+
+        for (const domain of group.domains) {
+            const normalizedDomain = toLowerString(domain);
+            if (!normalizedDomain) continue;
+
+            exactHostnameToBundleTitle.set(normalizedDomain, title);
+            rootDomainToBundleTitle.set(normalizedDomain, title);
+        }
+    }
+
+    return { exactHostnameToBundleTitle, rootDomainToBundleTitle };
+}
+
 export function getRootDomain(hostname, commonMultipartSuffixes) {
     const normalizedHostname = toLowerString(hostname);
     if (!normalizedHostname) return "";
