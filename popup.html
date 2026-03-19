@@ -8,11 +8,13 @@
 <body class="page popup">
   <div class="popup__title"><strong>SumTabs</strong></div>
 
+  <button class="button button--full-width" id="addDistinctSubdomain">Keep this subdomain distinct</button>
   <button class="button button--full-width" id="openSettings">Open Settings</button>
 
-  <div class="settings__small-text popup__description--muted">
+  <div class="settings__small-text popup__description--muted" id="popupDescription">
     Groups tabs by domain. No network calls.
   </div>
+  <div class="settings__small-text popup__status" id="popupStatus" aria-live="polite"></div>
 
   <script type="module" src="popup.js"></script>
 </body>
