@@ -37,8 +37,8 @@ The extension runs entirely in the browser — no network calls, no analytics �
   Example: A “News” bundle containing `nytimes.com` and `theatlantic.com`.  
   Tabs matching any listed domain will be grouped together under `∑ News`. You can also assign a specific tab-group color per bundle.
 
-- **Public-suffix overrides.**  
-  Includes a configurable “mini PSL” list (e.g. `co.uk`, `com.au`) used when determining root domains. You can extend this list on the settings page.
+- **Distinct Subdomains.**  
+  Includes a configurable list used when determining root domains. Add entries like `docs.google.com` to keep that hostname separate from `google.com`, and use the same list for public-suffix-style cases such as `co.uk`, `com.au`, or `github.io`.
 
 - **Excluded hostnames.**  
   Prevent specific subdomains (e.g. `docs.google.com`) from collapsing to their root domain.
@@ -75,7 +75,7 @@ To configure behavior:
 - Configure **Pinned tab hostnames or URLs** (one per line).
 - Enable **Create pinned tabs on new window** to seed new normal windows with pinned tabs.
 - Enable **Enforce pinned tabs continuously** to keep pinned tabs present by hostname (regardless of URL path) without stealing focus.
-- Add entries under **Public-suffix overrides** (one per line) to tweak root-domain detection.
+- Add entries under **Distinct Subdomains** (one per line) to keep exact hostnames separate from their parent domain and to handle public-suffix-style cases.
 - Add **Excluded hostnames** (one per line) to prevent specific subdomains from collapsing.
 - Use the **Custom domain bundles** editor to create/manage domain groupings and optionally choose a bundle color.
 
@@ -87,13 +87,13 @@ To configure behavior:
   Core grouping logic. Listens to tab creation, updates, activation, and window focus events. Includes throttling and re-entrancy safeguards to prevent event storms.
 
 - **`defaults.js`**  
-  Defines default settings, including prefix, collapse flags, public-suffix overrides, and custom bundles.
+  Defines default settings, including prefix, collapse flags, distinct-subdomain overrides, and custom bundles.
 
 - **`settings.html` + `settings.js`**  
   Implements the options page UI and storage logic. Uses semantic, BEM-style class names (e.g. `.settings__row`, `.bundle-editor__toolbar`).
 
 - **`popup.html` + `popup.js`**  
-  Minimal popup providing access to the settings page.
+  Popup actions for opening settings and quickly adding the current hostname to the Distinct Subdomains list when supported.
 
 - **`style.css`**  
   Centralized stylesheet using CSS custom properties for shared design tokens (fonts, spacing, colors). Organized into layout blocks, component blocks, and modifiers using a BEM-style convention for maintainability.

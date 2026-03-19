@@ -241,8 +241,17 @@ function getRootDomain(hostname) {
     const isIPv4 = /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname);
     if (isIPv4) return hostname;
 
-    const parts = hostname.split(".").filter(Boolean);
+    const parts = String(hostname || "").toLowerCase().split(".").filter(Boolean);
     if (parts.length <= 2) return hostname;
+
+    // Three-or-more label entries in COMMON_MULTIPART_SUFFIXES are treated as exact
+    // hostnames that should become their own grouping root. This lets entries like
+    // "docs.google.com" behave like a registrable domain while still allowing
+    // two-label entries such as "co.uk" or "github.io" to act as suffix overrides.
+    for (let start = 0; start <= parts.length - 3; start += 1) {
+        const candidate = parts.slice(start).join(".");
+        if (COMMON_MULTIPART_SUFFIXES.has(candidate)) return candidate;
+    }
 
     const last2 = parts.slice(-2).join(".");
     const last3 = parts.slice(-3).join(".");
