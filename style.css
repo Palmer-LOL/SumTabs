@@ -108,3 +108,7 @@
 .popup__description--muted {
   margin-top: var(--spacing-sm);
 }
+
+.popup__status {
+  margin-top: var(--spacing-xs);
+}
