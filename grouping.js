@@ -121,9 +121,12 @@ export function resolveGroupingForHostname({
     const rootDomainToBundleTitle = customBundleMaps?.rootDomainToBundleTitle;
 
     const isExactHostSeparated = excludedHostnames.has(normalizedHostname);
+    // Exact-host separation only changes the default fallback key.
+    // Custom bundles still resolve by exact hostname first, then by the registrable/root domain.
     const defaultGroupingKey = isExactHostSeparated ? normalizedHostname : rootDomain;
     const bundleInheritanceKey = rootDomain;
 
+    // An exact bundle match is the most specific result and wins before inherited root-domain bundles.
     const exactBundleTitle = getMapValue(exactHostnameToBundleTitle, normalizedHostname);
     if (exactBundleTitle) {
         return {
@@ -138,6 +141,7 @@ export function resolveGroupingForHostname({
         };
     }
 
+    // If there is no exact bundle, inherit from the root-domain bundle even when default grouping stays host-specific.
     const rootBundleTitle = getMapValue(rootDomainToBundleTitle, bundleInheritanceKey);
     if (rootBundleTitle) {
         return {
