@@ -261,6 +261,15 @@ function getGroupingForHostname(hostname) {
     });
 }
 
+function resolveTabGrouping(tab, changeInfo) {
+    if (!tab || tab.pinned) return null;
+
+    const hostname = getHostnameFromTab(tab, changeInfo);
+    if (!hostname) return null;
+
+    return getGroupingForHostname(hostname);
+}
+
 async function withSettings(fn) {
     await settingsReady;
     return fn();
@@ -394,14 +403,8 @@ async function getMatchingTabs(windowId, groupIdentity) {
     const matches = [];
 
     for (const t of tabs) {
-        if (t.pinned) continue;
-        if (!t.url) continue;
-
-        const u = safeParseUrl(t.url);
-        if (!isWebUrl(u)) continue;
-
-        const grouping = getGroupingForHostname(u.hostname);
-        if (grouping.identity === groupIdentity) matches.push(t);
+        const grouping = resolveTabGrouping(t);
+        if (grouping?.identity === groupIdentity) matches.push(t);
     }
     return matches;
 }
@@ -418,7 +421,7 @@ async function findExistingGroupIdForIdentity(matches, groupIdentity) {
     return null;
 }
 
-async function enforceGroupMembershipForTab(tab, currentIdentity) {
+async function enforceGroupMembershipForTab(tab, currentGrouping) {
     if (!tab || tab.id == null) return;
     if (tab.pinned) return;
 
@@ -437,13 +440,16 @@ async function enforceGroupMembershipForTab(tab, currentIdentity) {
     // Only police groups created/managed by this extension.
     if (!title.startsWith(AUTO_GROUP_PREFIX)) return;
 
+    const currentIdentity = currentGrouping?.identity;
+    if (!currentIdentity) return;
+
     // If tab no longer matches the group's identity, ungroup it.
     if (title !== currentIdentity) {
         await ungroupTab(tab.id);
     }
 }
 
-async function maybeGroupTab(tab, groupIdentity) {
+async function maybeGroupTab(tab, currentGrouping) {
     if (!tab || tab.id == null || tab.windowId == null) return;
     if (tab.pinned) return;
 
@@ -454,8 +460,11 @@ async function maybeGroupTab(tab, groupIdentity) {
         if (initialUrl && currentUrl && currentUrl === initialUrl) return;
     }
 
+    const groupIdentity = currentGrouping?.identity;
+    if (!groupIdentity) return;
+
     // Membership enforcement first
-    await enforceGroupMembershipForTab(tab, groupIdentity);
+    await enforceGroupMembershipForTab(tab, currentGrouping);
 
     const matches = await getMatchingTabs(tab.windowId, groupIdentity);
 
@@ -549,8 +558,8 @@ chrome.tabs.onCreated.addListener(async (tab) => {
         // Record the first http(s) URL we see for this tab as its “initial URL”.
         if (u?.href) initialUrlByTab.set(tab.id, u.href);
 
-        const grouping = getGroupingForHostname(u.hostname);
-        await maybeGroupTab(tab, grouping.identity);
+        const grouping = resolveTabGrouping(tab);
+        await maybeGroupTab(tab, grouping);
 
         if (COLLAPSE_OTHER_GROUPS_ON_NAV_EVENTS) {
             // Re-fetch the tab so we know its current groupId after grouping logic.
@@ -598,8 +607,8 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 
         lastSeenUrlByTab.set(tabId, currentUrl);
 
-        const grouping = getGroupingForHostname(u.hostname);
-        await maybeGroupTab(tab, grouping.identity);
+        const grouping = resolveTabGrouping(tab, changeInfo);
+        await maybeGroupTab(tab, grouping);
 
         if (COLLAPSE_OTHER_GROUPS_ON_NAV_EVENTS) {
             const refreshed = await chrome.tabs.get(tabId);
