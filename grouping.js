@@ -98,10 +98,11 @@ export function resolveGroupingForHostname({
         : new Set((excludedFromRootCollapse ?? []).map((value) => toLowerString(value)).filter(Boolean));
 
     const exactHostnameToBundleTitle = customBundleMaps?.exactHostnameToBundleTitle;
-    const groupKeyToBundleTitle = customBundleMaps?.groupKeyToBundleTitle;
+    const rootDomainToBundleTitle = customBundleMaps?.rootDomainToBundleTitle;
 
     const isExactHostSeparated = excludedHostnames.has(normalizedHostname);
-    const defaultGroupKey = isExactHostSeparated ? normalizedHostname : rootDomain;
+    const defaultGroupingKey = isExactHostSeparated ? normalizedHostname : rootDomain;
+    const bundleInheritanceKey = rootDomain;
 
     const exactBundleTitle = getMapValue(exactHostnameToBundleTitle, normalizedHostname);
     if (exactBundleTitle) {
@@ -117,11 +118,11 @@ export function resolveGroupingForHostname({
         };
     }
 
-    const rootBundleTitle = getMapValue(groupKeyToBundleTitle, rootDomain);
+    const rootBundleTitle = getMapValue(rootDomainToBundleTitle, bundleInheritanceKey);
     if (rootBundleTitle) {
         return {
             hostname: normalizedHostname,
-            groupKey: rootDomain,
+            groupKey: bundleInheritanceKey,
             identity: `${prefix}${rootBundleTitle}`,
             reason: "custom-bundle-grouping",
             matchedSuffix,
@@ -134,7 +135,7 @@ export function resolveGroupingForHostname({
     if (isExactHostSeparated) {
         return {
             hostname: normalizedHostname,
-            groupKey: defaultGroupKey,
+            groupKey: defaultGroupingKey,
             identity: `${prefix}${normalizedHostname}`,
             reason: "exact-host-separation",
             matchedSuffix,
@@ -147,7 +148,7 @@ export function resolveGroupingForHostname({
     if (matchedSuffix) {
         return {
             hostname: normalizedHostname,
-            groupKey: defaultGroupKey,
+            groupKey: defaultGroupingKey,
             identity: `${prefix}${rootDomain}`,
             reason: "multipart-suffix-separation",
             matchedSuffix,
@@ -159,7 +160,7 @@ export function resolveGroupingForHostname({
 
     return {
         hostname: normalizedHostname,
-        groupKey: defaultGroupKey,
+        groupKey: defaultGroupingKey,
         identity: `${prefix}${rootDomain}`,
         reason: "default-root-domain-grouping",
         matchedSuffix: null,

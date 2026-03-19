@@ -18,7 +18,7 @@ let CREATE_PINNED_TABS_ON_NEW_WINDOW = DEFAULTS.createPinnedTabsOnNewWindow;
 
 let customBundleMaps = {
     exactHostnameToBundleTitle: new Map(),
-    groupKeyToBundleTitle: new Map(),
+    rootDomainToBundleTitle: new Map(),
 };
 let customIdentityToColor = new Map();
 const VALID_GROUP_COLORS = new Set(["grey", "blue", "red", "yellow", "green", "pink", "purple", "cyan", "orange"]);
@@ -35,7 +35,7 @@ function rebuildDerived() {
 
     customBundleMaps = {
         exactHostnameToBundleTitle: new Map(),
-        groupKeyToBundleTitle: new Map(),
+        rootDomainToBundleTitle: new Map(),
     };
     customIdentityToColor = new Map();
     for (const g of (settings.customDomainGroups ?? [])) {
@@ -49,10 +49,11 @@ function rebuildDerived() {
         if (VALID_GROUP_COLORS.has(color)) customIdentityToColor.set(ident, color);
 
         for (const d of g.domains) {
-            const dl = String(d).trim().toLowerCase();
-            if (!dl) continue;
-            customBundleMaps.exactHostnameToBundleTitle.set(dl, title);
-            customBundleMaps.groupKeyToBundleTitle.set(dl, title);
+            const defaultGroupingKey = String(d).trim().toLowerCase();
+            if (!defaultGroupingKey) continue;
+            const bundleInheritanceKey = defaultGroupingKey;
+            customBundleMaps.exactHostnameToBundleTitle.set(defaultGroupingKey, title);
+            customBundleMaps.rootDomainToBundleTitle.set(bundleInheritanceKey, title);
         }
     }
 }

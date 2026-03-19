@@ -27,7 +27,7 @@ function normalizeLowerArray(values) {
 
 function buildCustomBundleMaps(customDomainGroups) {
     const exactHostnameToBundleTitle = new Map();
-    const groupKeyToBundleTitle = new Map();
+    const rootDomainToBundleTitle = new Map();
 
     for (const group of customDomainGroups ?? []) {
         if (!group?.title || !Array.isArray(group.domains)) continue;
@@ -36,14 +36,15 @@ function buildCustomBundleMaps(customDomainGroups) {
         if (!title) continue;
 
         for (const domain of group.domains) {
-            const normalizedDomain = String(domain ?? "").trim().toLowerCase();
-            if (!normalizedDomain) continue;
-            exactHostnameToBundleTitle.set(normalizedDomain, title);
-            groupKeyToBundleTitle.set(normalizedDomain, title);
+            const defaultGroupingKey = String(domain ?? "").trim().toLowerCase();
+            if (!defaultGroupingKey) continue;
+            const bundleInheritanceKey = defaultGroupingKey;
+            exactHostnameToBundleTitle.set(defaultGroupingKey, title);
+            rootDomainToBundleTitle.set(bundleInheritanceKey, title);
         }
     }
 
-    return { exactHostnameToBundleTitle, groupKeyToBundleTitle };
+    return { exactHostnameToBundleTitle, rootDomainToBundleTitle };
 }
 
 function isSupportedTabUrl(tabUrl) {
