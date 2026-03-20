@@ -17,6 +17,26 @@ function getMapValue(mapLike, key) {
     return value == null ? null : value;
 }
 
+export function buildCustomBundleMaps(customDomainGroups) {
+    const exactHostnameToBundleTitle = new Map();
+    const rootDomainToBundleTitle = new Map();
+
+    for (const group of customDomainGroups ?? []) {
+        const title = String(group?.title ?? "").trim();
+        if (!title || !Array.isArray(group?.domains)) continue;
+
+        for (const domain of group.domains) {
+            const normalizedDomain = toLowerString(domain);
+            if (!normalizedDomain) continue;
+
+            exactHostnameToBundleTitle.set(normalizedDomain, title);
+            rootDomainToBundleTitle.set(normalizedDomain, title);
+        }
+    }
+
+    return { exactHostnameToBundleTitle, rootDomainToBundleTitle };
+}
+
 export function getRootDomain(hostname, commonMultipartSuffixes) {
     const normalizedHostname = toLowerString(hostname);
     if (!normalizedHostname) return "";
@@ -98,8 +118,15 @@ export function resolveGroupingForHostname({
         : new Set((excludedFromRootCollapse ?? []).map((value) => toLowerString(value)).filter(Boolean));
 
     const exactHostnameToBundleTitle = customBundleMaps?.exactHostnameToBundleTitle;
-    const groupKeyToBundleTitle = customBundleMaps?.groupKeyToBundleTitle;
+    const rootDomainToBundleTitle = customBundleMaps?.rootDomainToBundleTitle;
 
+    const isExactHostSeparated = excludedHostnames.has(normalizedHostname);
+    // Exact-host separation only changes the default fallback key.
+    // Custom bundles still resolve by exact hostname first, then by the registrable/root domain.
+    const defaultGroupingKey = isExactHostSeparated ? normalizedHostname : rootDomain;
+    const bundleInheritanceKey = rootDomain;
+
+    // An exact bundle match is the most specific result and wins before inherited root-domain bundles.
     const exactBundleTitle = getMapValue(exactHostnameToBundleTitle, normalizedHostname);
     if (exactBundleTitle) {
         return {
@@ -114,25 +141,25 @@ export function resolveGroupingForHostname({
         };
     }
 
-    const groupKey = excludedHostnames.has(normalizedHostname) ? normalizedHostname : rootDomain;
-    const rootBundleTitle = getMapValue(groupKeyToBundleTitle, groupKey);
+    // If there is no exact bundle, inherit from the root-domain bundle even when default grouping stays host-specific.
+    const rootBundleTitle = getMapValue(rootDomainToBundleTitle, bundleInheritanceKey);
     if (rootBundleTitle) {
         return {
             hostname: normalizedHostname,
-            groupKey,
+            groupKey: bundleInheritanceKey,
             identity: `${prefix}${rootBundleTitle}`,
             reason: "custom-bundle-grouping",
             matchedSuffix,
-            matchedExactHostname: excludedHostnames.has(normalizedHostname) ? normalizedHostname : null,
+            matchedExactHostname: isExactHostSeparated ? normalizedHostname : null,
             matchedCustomBundleTitle: rootBundleTitle,
             displayGroupingLabel: rootBundleTitle,
         };
     }
 
-    if (excludedHostnames.has(normalizedHostname)) {
+    if (isExactHostSeparated) {
         return {
             hostname: normalizedHostname,
-            groupKey: normalizedHostname,
+            groupKey: defaultGroupingKey,
             identity: `${prefix}${normalizedHostname}`,
             reason: "exact-host-separation",
             matchedSuffix,
@@ -145,7 +172,7 @@ export function resolveGroupingForHostname({
     if (matchedSuffix) {
         return {
             hostname: normalizedHostname,
-            groupKey: rootDomain,
+            groupKey: defaultGroupingKey,
             identity: `${prefix}${rootDomain}`,
             reason: "multipart-suffix-separation",
             matchedSuffix,
@@ -157,7 +184,7 @@ export function resolveGroupingForHostname({
 
     return {
         hostname: normalizedHostname,
-        groupKey: rootDomain,
+        groupKey: defaultGroupingKey,
         identity: `${prefix}${rootDomain}`,
         reason: "default-root-domain-grouping",
         matchedSuffix: null,

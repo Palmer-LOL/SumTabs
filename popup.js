@@ -1,5 +1,5 @@
 import { DEFAULTS } from "./defaults.js";
-import { getDomainWideSeparationRule, resolveGroupingForHostname } from "./grouping.js";
+import { buildCustomBundleMaps, getDomainWideSeparationRule, resolveGroupingForHostname } from "./grouping.js";
 
 const activeHostnameEl = document.getElementById("activeHostname");
 const groupingTargetEl = document.getElementById("groupingTarget");
@@ -23,27 +23,6 @@ function normalizeLowerList(values) {
 
 function normalizeLowerArray(values) {
     return [...normalizeLowerList(values)];
-}
-
-function buildCustomBundleMaps(customDomainGroups) {
-    const exactHostnameToBundleTitle = new Map();
-    const groupKeyToBundleTitle = new Map();
-
-    for (const group of customDomainGroups ?? []) {
-        if (!group?.title || !Array.isArray(group.domains)) continue;
-
-        const title = String(group.title).trim();
-        if (!title) continue;
-
-        for (const domain of group.domains) {
-            const normalizedDomain = String(domain ?? "").trim().toLowerCase();
-            if (!normalizedDomain) continue;
-            exactHostnameToBundleTitle.set(normalizedDomain, title);
-            groupKeyToBundleTitle.set(normalizedDomain, title);
-        }
-    }
-
-    return { exactHostnameToBundleTitle, groupKeyToBundleTitle };
 }
 
 function isSupportedTabUrl(tabUrl) {
@@ -235,6 +214,7 @@ async function renderActiveTabStatus() {
     const settings = await chrome.storage.sync.get(DEFAULTS);
     const commonMultipartSuffixes = normalizeLowerList(settings.commonMultipartSuffixes);
     const excludedFromRootCollapse = normalizeLowerList(settings.excludedFromRootCollapse);
+    // Mirror the background worker's shared precedence so the popup explanation matches runtime grouping behavior.
     const grouping = resolveGroupingForHostname({
         hostname: parsedUrl.hostname,
         commonMultipartSuffixes,

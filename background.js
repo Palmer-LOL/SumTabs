@@ -1,7 +1,7 @@
 // Auto-group tabs by root/registrable domain (with domain-wide + exact-host separation rules) + strict membership enforcement.
 // SAFETY VERSION: adds throttles + re-entrancy guards to prevent event storms / runaway loops.
 import { DEFAULTS } from "./defaults.js";
-import { resolveGroupingForHostname } from "./grouping.js";
+import { buildCustomBundleMaps, resolveGroupingForHostname } from "./grouping.js";
 
 // -------------------- SETTINGS --------------------
 
@@ -18,7 +18,7 @@ let CREATE_PINNED_TABS_ON_NEW_WINDOW = DEFAULTS.createPinnedTabsOnNewWindow;
 
 let customBundleMaps = {
     exactHostnameToBundleTitle: new Map(),
-    groupKeyToBundleTitle: new Map(),
+    rootDomainToBundleTitle: new Map(),
 };
 let customIdentityToColor = new Map();
 const VALID_GROUP_COLORS = new Set(["grey", "blue", "red", "yellow", "green", "pink", "purple", "cyan", "orange"]);
@@ -33,10 +33,7 @@ function rebuildDerived() {
     COMMON_MULTIPART_SUFFIXES = new Set((settings.commonMultipartSuffixes ?? []).map(s => String(s).toLowerCase()));
     EXCLUDED_FROM_ROOT_COLLAPSE = new Set((settings.excludedFromRootCollapse ?? []).map(s => String(s).toLowerCase()));
 
-    customBundleMaps = {
-        exactHostnameToBundleTitle: new Map(),
-        groupKeyToBundleTitle: new Map(),
-    };
+    customBundleMaps = buildCustomBundleMaps(settings.customDomainGroups);
     customIdentityToColor = new Map();
     for (const g of (settings.customDomainGroups ?? [])) {
         if (!g?.title || !Array.isArray(g.domains)) continue;
@@ -47,13 +44,6 @@ function rebuildDerived() {
         const ident = AUTO_GROUP_PREFIX + title;
         const color = String(g?.color ?? "").trim().toLowerCase();
         if (VALID_GROUP_COLORS.has(color)) customIdentityToColor.set(ident, color);
-
-        for (const d of g.domains) {
-            const dl = String(d).trim().toLowerCase();
-            if (!dl) continue;
-            customBundleMaps.exactHostnameToBundleTitle.set(dl, title);
-            customBundleMaps.groupKeyToBundleTitle.set(dl, title);
-        }
     }
 }
 
@@ -252,6 +242,7 @@ function getHostnameFromTab(tab, changeInfo) {
 }
 
 function getGroupingForHostname(hostname) {
+    // Shared precedence lives in grouping.js: exact custom bundles first, then inherited root-domain bundles, then default separation rules.
     return resolveGroupingForHostname({
         hostname,
         commonMultipartSuffixes: COMMON_MULTIPART_SUFFIXES,
