@@ -12,6 +12,7 @@ let COMMON_MULTIPART_SUFFIXES = new Set(DEFAULTS.commonMultipartSuffixes);
 let EXCLUDED_FROM_ROOT_COLLAPSE = new Set(DEFAULTS.excludedFromRootCollapse);
 let AUTO_GROUP_PREFIX = DEFAULTS.autoGroupPrefix;
 let COLLAPSE_OTHER_GROUPS_ON_NAV_EVENTS = DEFAULTS.collapseOtherGroupsOnNavEvents;
+let UNGROUP_SINGLETON_MANAGED_GROUPS = DEFAULTS.ungroupSingletonManagedGroups;
 let IGNORE_INITIAL_TAB_URL_FOR_GROUPING = DEFAULTS.ignoreInitialTabUrlForGrouping;
 let IGNORE_INITIAL_TAB_URL_FOR_ENFORCEMENT = DEFAULTS.ignoreInitialTabUrlForEnforcement;
 let CREATE_PINNED_TABS_ON_NEW_WINDOW = DEFAULTS.createPinnedTabsOnNewWindow;
@@ -26,6 +27,7 @@ const VALID_GROUP_COLORS = new Set(["grey", "blue", "red", "yellow", "green", "p
 function rebuildDerived() {
     AUTO_GROUP_PREFIX = settings.autoGroupPrefix ?? DEFAULTS.autoGroupPrefix;
     COLLAPSE_OTHER_GROUPS_ON_NAV_EVENTS = !!settings.collapseOtherGroupsOnNavEvents;
+    UNGROUP_SINGLETON_MANAGED_GROUPS = !!settings.ungroupSingletonManagedGroups;
     IGNORE_INITIAL_TAB_URL_FOR_GROUPING = !!settings.ignoreInitialTabUrlForGrouping;
     IGNORE_INITIAL_TAB_URL_FOR_ENFORCEMENT = !!settings.ignoreInitialTabUrlForEnforcement;
     CREATE_PINNED_TABS_ON_NEW_WINDOW = !!settings.createPinnedTabsOnNewWindow;
@@ -412,6 +414,38 @@ async function findExistingGroupIdForIdentity(matches, groupIdentity) {
     return null;
 }
 
+async function cleanupManagedSingletonGroupsInWindow(windowId) {
+    if (windowId == null) return;
+
+    // false/default => keep singleton grouped; true => ungroup singleton managed group.
+    if (!UNGROUP_SINGLETON_MANAGED_GROUPS) return;
+
+    try {
+        const tabs = await chrome.tabs.query({ windowId });
+        const tabsByGroupId = new Map();
+
+        for (const t of tabs) {
+            const gid = t?.groupId;
+            if (gid == null || gid === NONE) continue;
+
+            if (!tabsByGroupId.has(gid)) tabsByGroupId.set(gid, []);
+            tabsByGroupId.get(gid).push(t);
+        }
+
+        for (const [gid, groupedTabs] of tabsByGroupId.entries()) {
+            if (groupedTabs.length !== 1) continue;
+
+            const title = await getGroupTitle(gid);
+            if (!title || !title.startsWith(AUTO_GROUP_PREFIX)) continue;
+
+            const [singletonTab] = groupedTabs;
+            if (!singletonTab?.id || singletonTab.pinned) continue;
+
+            await ungroupTab(singletonTab.id);
+        }
+    } catch {}
+}
+
 async function enforceGroupMembershipForTab(tab, currentGrouping) {
     if (!tab || tab.id == null) return;
     if (tab.pinned) return;
@@ -601,6 +635,10 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
         const grouping = resolveTabGrouping(tab, changeInfo);
         await maybeGroupTab(tab, grouping);
 
+        // Canonical semantics: this helper only ungroups singleton managed groups
+        // when UNGROUP_SINGLETON_MANAGED_GROUPS is enabled.
+        await cleanupManagedSingletonGroupsInWindow(tab.windowId);
+
         if (COLLAPSE_OTHER_GROUPS_ON_NAV_EVENTS) {
             const refreshed = await chrome.tabs.get(tabId);
             await collapseAllGroupsExcept(refreshed.windowId, refreshed.groupId);
@@ -628,8 +666,13 @@ chrome.windows.onCreated.addListener(async (win) => {
 chrome.tabs.onRemoved.addListener(async (_tabId, removeInfo) => {
     try {
         await settingsReady;
-        if (!settings.enforcePinnedTabs) return;
         if (!removeInfo || removeInfo.windowId == null || removeInfo.isWindowClosing) return;
+
+        // Canonical semantics: this helper only ungroups singleton managed groups
+        // when UNGROUP_SINGLETON_MANAGED_GROUPS is enabled.
+        await cleanupManagedSingletonGroupsInWindow(removeInfo.windowId);
+
+        if (!settings.enforcePinnedTabs) return;
         await ensurePinnedTabsForWindow(removeInfo.windowId);
     } catch {}
 });
@@ -645,6 +688,10 @@ chrome.tabs.onUpdated.addListener(async (_tabId, changeInfo, tab) => {
 
         const win = await chrome.windows.get(tab.windowId);
         if (!win || win.type !== "normal") return;
+
+        // Canonical semantics: this helper only ungroups singleton managed groups
+        // when UNGROUP_SINGLETON_MANAGED_GROUPS is enabled.
+        await cleanupManagedSingletonGroupsInWindow(tab.windowId);
 
         await ensurePinnedTabsForWindow(tab.windowId);
     } catch {}
