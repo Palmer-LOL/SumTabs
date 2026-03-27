@@ -1,6 +1,7 @@
 export const DEFAULTS = {
     autoGroupPrefix: "∑ ",
     collapseOtherGroupsOnNavEvents: true,
+    ungroupSingletonManagedGroups: false,
 
     ignoreInitialTabUrlForGrouping: true,
     ignoreInitialTabUrlForEnforcement: true,
