@@ -635,6 +635,10 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
         const grouping = resolveTabGrouping(tab, changeInfo);
         await maybeGroupTab(tab, grouping);
 
+        // Canonical semantics: this helper only ungroups singleton managed groups
+        // when UNGROUP_SINGLETON_MANAGED_GROUPS is enabled.
+        await cleanupManagedSingletonGroupsInWindow(tab.windowId);
+
         if (COLLAPSE_OTHER_GROUPS_ON_NAV_EVENTS) {
             const refreshed = await chrome.tabs.get(tabId);
             await collapseAllGroupsExcept(refreshed.windowId, refreshed.groupId);
