@@ -16,6 +16,7 @@ let UNGROUP_SINGLETON_MANAGED_GROUPS = DEFAULTS.ungroupSingletonManagedGroups;
 let IGNORE_INITIAL_TAB_URL_FOR_GROUPING = DEFAULTS.ignoreInitialTabUrlForGrouping;
 let IGNORE_INITIAL_TAB_URL_FOR_ENFORCEMENT = DEFAULTS.ignoreInitialTabUrlForEnforcement;
 let CREATE_PINNED_TABS_ON_NEW_WINDOW = DEFAULTS.createPinnedTabsOnNewWindow;
+let KEEP_MANAGED_GROUPS_AT_FRONT = DEFAULTS.keepManagedGroupsAtFront;
 
 let customBundleMaps = {
     exactHostnameToBundleTitle: new Map(),
@@ -31,6 +32,7 @@ function rebuildDerived() {
     IGNORE_INITIAL_TAB_URL_FOR_GROUPING = !!settings.ignoreInitialTabUrlForGrouping;
     IGNORE_INITIAL_TAB_URL_FOR_ENFORCEMENT = !!settings.ignoreInitialTabUrlForEnforcement;
     CREATE_PINNED_TABS_ON_NEW_WINDOW = !!settings.createPinnedTabsOnNewWindow;
+    KEEP_MANAGED_GROUPS_AT_FRONT = !!settings.keepManagedGroupsAtFront;
 
     COMMON_MULTIPART_SUFFIXES = new Set((settings.commonMultipartSuffixes ?? []).map(s => String(s).toLowerCase()));
     EXCLUDED_FROM_ROOT_COLLAPSE = new Set((settings.excludedFromRootCollapse ?? []).map(s => String(s).toLowerCase()));
@@ -129,6 +131,34 @@ const lastSeenUrlByTab = new Map(); // tabId -> last seen tab.url
 const initialUrlByTab = new Map(); // tabId -> first seen http(s) URL
 
 const pinnedEnforcementInFlightByWindow = new Map();
+
+const managedGroupReorderTimerByWindow = new Map();
+
+function clearManagedGroupReorderTimer(windowId) {
+    const timer = managedGroupReorderTimerByWindow.get(windowId);
+    if (!timer) return;
+    clearTimeout(timer);
+    managedGroupReorderTimerByWindow.delete(windowId);
+}
+
+function queueManagedGroupFrontReorder(windowId, delayMs = 100) {
+    if (!KEEP_MANAGED_GROUPS_AT_FRONT || windowId == null) return;
+
+    clearManagedGroupReorderTimer(windowId);
+
+    const timer = setTimeout(async () => {
+        managedGroupReorderTimerByWindow.delete(windowId);
+
+        if (underMutationLock()) {
+            queueManagedGroupFrontReorder(windowId, 200);
+            return;
+        }
+
+        await reorderManagedGroupsToFrontInWindow(windowId);
+    }, delayMs);
+
+    managedGroupReorderTimerByWindow.set(windowId, timer);
+}
 
 function parsePinnedEntry(rawEntry) {
     const raw = String(rawEntry || "").trim();
@@ -389,6 +419,89 @@ async function ungroupTab(tabId) {
     } catch {}
 }
 
+function managedGroupSortLabel(title) {
+    const groupTitle = String(title ?? "");
+    if (!groupTitle.startsWith(AUTO_GROUP_PREFIX)) return groupTitle.toLowerCase();
+    return groupTitle.slice(AUTO_GROUP_PREFIX.length).trim().toLowerCase();
+}
+
+function hasOrderedTabIdsAtIndex(tabs, startIndex, expectedTabIds) {
+    if (!Array.isArray(expectedTabIds) || expectedTabIds.length === 0) return true;
+
+    for (let i = 0; i < expectedTabIds.length; i += 1) {
+        const tab = tabs[startIndex + i];
+        if (!tab || tab.id !== expectedTabIds[i]) return false;
+    }
+
+    return true;
+}
+
+async function reorderManagedGroupsToFrontInWindow(windowId) {
+    if (windowId == null) return;
+
+    try {
+        const tabs = await chrome.tabs.query({ windowId });
+        if (!Array.isArray(tabs) || tabs.length === 0) return;
+
+        let firstNonPinnedIndex = tabs.length;
+        for (const tab of tabs) {
+            if (!tab?.pinned) {
+                firstNonPinnedIndex = tab.index;
+                break;
+            }
+        }
+
+        const managedGroupsById = new Map();
+
+        for (const tab of tabs) {
+            if (!tab || tab.pinned) continue;
+
+            const gid = tab.groupId;
+            if (gid == null || gid === NONE) continue;
+
+            if (!managedGroupsById.has(gid)) {
+                const title = await getGroupTitle(gid);
+                if (!title || !title.startsWith(AUTO_GROUP_PREFIX)) continue;
+                managedGroupsById.set(gid, { groupId: gid, title, tabs: [] });
+            }
+
+            managedGroupsById.get(gid)?.tabs.push(tab);
+        }
+
+        const managedGroups = Array.from(managedGroupsById.values())
+            .map((group) => ({
+                ...group,
+                tabs: group.tabs
+                    .filter((tab) => tab?.id != null)
+                    .sort((a, b) => a.index - b.index),
+            }))
+            .filter((group) => group.tabs.length > 0)
+            .sort((a, b) => {
+                const labelCompare = managedGroupSortLabel(a.title).localeCompare(managedGroupSortLabel(b.title));
+                if (labelCompare !== 0) return labelCompare;
+                return a.groupId - b.groupId;
+            });
+
+        if (managedGroups.length === 0) return;
+
+        let targetIndex = firstNonPinnedIndex;
+
+        for (const group of managedGroups) {
+            const tabIds = group.tabs.map((tab) => tab.id).filter((id) => id != null);
+            if (tabIds.length === 0) continue;
+
+            if (hasOrderedTabIdsAtIndex(tabs, targetIndex, tabIds)) {
+                targetIndex += tabIds.length;
+                continue;
+            }
+
+            acquireMutationLock(300);
+            await chrome.tabs.move(tabIds, { index: targetIndex });
+            targetIndex += tabIds.length;
+        }
+    } catch {}
+}
+
 // Returns tabs in window whose CURRENT identity matches groupIdentity.
 // Excludes pinned tabs and non-http(s).
 async function getMatchingTabs(windowId, groupIdentity) {
@@ -509,6 +622,7 @@ async function maybeGroupTab(tab, currentGrouping) {
             if (didRenameGroup) {
                 await runChromiumGroupTitleRenderWorkaround(tab.windowId);
             }
+            queueManagedGroupFrontReorder(tab.windowId);
         } catch {}
         return;
     }
@@ -524,6 +638,7 @@ async function maybeGroupTab(tab, currentGrouping) {
         await ensureGroupColor(newGroupId, desiredColor);
         await expandGroupIfCollapsed(newGroupId);
         await runChromiumGroupTitleRenderWorkaround(tab.windowId);
+        queueManagedGroupFrontReorder(tab.windowId);
     } catch {}
 }
 
@@ -591,6 +706,8 @@ chrome.tabs.onCreated.addListener(async (tab) => {
             const refreshed = await chrome.tabs.get(tab.id);
             await collapseAllGroupsExcept(refreshed.windowId, refreshed.groupId);
         }
+
+        queueManagedGroupFrontReorder(tab.windowId);
     } catch {}
 });
 
@@ -643,6 +760,8 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
             const refreshed = await chrome.tabs.get(tabId);
             await collapseAllGroupsExcept(refreshed.windowId, refreshed.groupId);
         }
+
+        queueManagedGroupFrontReorder(tab.windowId);
     } catch {}
 });
 
@@ -651,6 +770,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
         await settingsReady;
         if (underMutationLock()) return;
         await handleActivation(activeInfo.tabId, activeInfo.windowId);
+        queueManagedGroupFrontReorder(activeInfo.windowId);
     } catch {}
 });
 
@@ -660,6 +780,7 @@ chrome.windows.onCreated.addListener(async (win) => {
         if (!win || win.type !== "normal") return;
         await createPinnedTabsForWindow(win.id);
         await ensurePinnedTabsForWindow(win.id);
+        queueManagedGroupFrontReorder(win.id);
     } catch {}
 });
 
@@ -672,8 +793,11 @@ chrome.tabs.onRemoved.addListener(async (_tabId, removeInfo) => {
         // when UNGROUP_SINGLETON_MANAGED_GROUPS is enabled.
         await cleanupManagedSingletonGroupsInWindow(removeInfo.windowId);
 
-        if (!settings.enforcePinnedTabs) return;
-        await ensurePinnedTabsForWindow(removeInfo.windowId);
+        if (settings.enforcePinnedTabs) {
+            await ensurePinnedTabsForWindow(removeInfo.windowId);
+        }
+
+        queueManagedGroupFrontReorder(removeInfo.windowId);
     } catch {}
 });
 
@@ -694,6 +818,7 @@ chrome.tabs.onUpdated.addListener(async (_tabId, changeInfo, tab) => {
         await cleanupManagedSingletonGroupsInWindow(tab.windowId);
 
         await ensurePinnedTabsForWindow(tab.windowId);
+        queueManagedGroupFrontReorder(tab.windowId);
     } catch {}
 });
 
@@ -707,13 +832,17 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
         if (!activeTab) return;
 
         await handleActivation(activeTab.id, windowId);
+        queueManagedGroupFrontReorder(windowId);
     } catch {}
 });
 
 // Cache maintenance
 chrome.tabGroups.onRemoved?.addListener((group) => {
     groupTitleCache.delete(group.id);
+    clearManagedGroupReorderTimer(group.windowId);
+    queueManagedGroupFrontReorder(group.windowId);
 });
 chrome.tabGroups.onUpdated?.addListener((group) => {
     groupTitleCache.set(group.id, group.title ?? null);
+    queueManagedGroupFrontReorder(group.windowId);
 });
