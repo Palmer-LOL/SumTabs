@@ -22,6 +22,9 @@ The extension runs entirely in the browser — no network calls, no analytics �
 - **Singleton managed-group behavior (optional).**  
   You can choose what happens when a managed `∑ ` group drops to one tab. By default, the singleton group remains. If enabled, SumTabs ungroups the lone tab so the group is removed until grouping conditions are met again.
 
+- **Managed groups at front (optional, default on).**  
+  When enabled, SumTabs continuously keeps managed `∑ ` groups at the front of the non-pinned tab area in each window. Managed groups are ordered alphabetically by title, and pinned tabs remain untouched.
+
 ---
 
 ### Pinned Tab Startup + Enforcement (Optional)
@@ -75,6 +78,7 @@ To configure behavior:
 - Open the extension popup and click **Open Settings**.
 - Toggle **Collapse other groups when navigating/creating tabs** to enable or disable focus mode.
 - Toggle **Ungroup managed groups when only one tab remains** to remove singleton managed groups automatically (default is off, so singleton managed groups remain grouped).
+- Toggle **Keep managed groups at the front of tab order** to control continuous front-ordering of managed `∑ ` groups (default is on).
 - Toggle **Ignore initial tab URL for grouping** and **Ignore initial tab URL for enforcement** to avoid grouping while tabs are still on their initial load.
 - Configure **Pinned tab hostnames or URLs** (one per line).
 - Enable **Create pinned tabs on new window** to seed new normal windows with pinned tabs.
@@ -88,10 +92,10 @@ To configure behavior:
 ## Code Structure
 
 - **`background.js`**  
-  Core grouping logic. Listens to tab creation, updates, activation, and window focus events. Includes throttling and re-entrancy safeguards to prevent event storms.
+  Core grouping logic. Listens to tab creation, updates, activation, and window focus events. Includes throttling and re-entrancy safeguards to prevent event storms, plus managed-group front-ordering orchestration when enabled.
 
 - **`defaults.js`**  
-  Defines default settings, including prefix, collapse flags, backward-compatible separation-rule defaults, and custom bundles.
+  Defines default settings, including prefix, collapse/front-order flags, backward-compatible separation-rule defaults, and custom bundles.
 
 - **`settings.html` + `settings.js`**  
   Implements the options page UI and storage logic. Uses semantic, BEM-style class names (e.g. `.settings__row`, `.bundle-editor__toolbar`).
