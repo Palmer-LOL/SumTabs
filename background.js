@@ -666,8 +666,13 @@ chrome.windows.onCreated.addListener(async (win) => {
 chrome.tabs.onRemoved.addListener(async (_tabId, removeInfo) => {
     try {
         await settingsReady;
-        if (!settings.enforcePinnedTabs) return;
         if (!removeInfo || removeInfo.windowId == null || removeInfo.isWindowClosing) return;
+
+        // Canonical semantics: this helper only ungroups singleton managed groups
+        // when UNGROUP_SINGLETON_MANAGED_GROUPS is enabled.
+        await cleanupManagedSingletonGroupsInWindow(removeInfo.windowId);
+
+        if (!settings.enforcePinnedTabs) return;
         await ensurePinnedTabsForWindow(removeInfo.windowId);
     } catch {}
 });
@@ -683,6 +688,10 @@ chrome.tabs.onUpdated.addListener(async (_tabId, changeInfo, tab) => {
 
         const win = await chrome.windows.get(tab.windowId);
         if (!win || win.type !== "normal") return;
+
+        // Canonical semantics: this helper only ungroups singleton managed groups
+        // when UNGROUP_SINGLETON_MANAGED_GROUPS is enabled.
+        await cleanupManagedSingletonGroupsInWindow(tab.windowId);
 
         await ensurePinnedTabsForWindow(tab.windowId);
     } catch {}
