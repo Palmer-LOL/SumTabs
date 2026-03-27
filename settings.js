@@ -154,7 +154,6 @@ async function load() {
     // Default (false): keep singleton managed groups grouped. Enabled (true): ungroup them.
     $("ungroupSingletonManagedGroups").checked = !!stored.ungroupSingletonManagedGroups;
     $("ignoreInitialTabUrlForGrouping").checked = !!stored.ignoreInitialTabUrlForGrouping;
-    $("keepManagedGroupsAtFront").checked = !!stored.keepManagedGroupsAtFront;
     $("ignoreInitialTabUrlForEnforcement").checked = !!stored.ignoreInitialTabUrlForEnforcement;
     $("createPinnedTabsOnNewWindow").checked = !!stored.createPinnedTabsOnNewWindow;
     $("enforcePinnedTabs").checked = !!stored.enforcePinnedTabs;
@@ -192,7 +191,6 @@ async function save() {
         // Persist singleton managed-group policy exactly as represented in the settings checkbox.
         ungroupSingletonManagedGroups: $("ungroupSingletonManagedGroups").checked,
         ignoreInitialTabUrlForGrouping: $("ignoreInitialTabUrlForGrouping").checked,
-        keepManagedGroupsAtFront: $("keepManagedGroupsAtFront").checked,
         ignoreInitialTabUrlForEnforcement: $("ignoreInitialTabUrlForEnforcement").checked,
         createPinnedTabsOnNewWindow: $("createPinnedTabsOnNewWindow").checked,
         enforcePinnedTabs: $("enforcePinnedTabs").checked,
