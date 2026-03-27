@@ -151,6 +151,8 @@ function syncAdvancedJsonFromUi() {
 async function load() {
     const stored = await chrome.storage.sync.get(DEFAULTS);
     $("collapseOtherGroupsOnNavEvents").checked = !!stored.collapseOtherGroupsOnNavEvents;
+    // Default (false): keep singleton managed groups grouped. Enabled (true): ungroup them.
+    $("ungroupSingletonManagedGroups").checked = !!stored.ungroupSingletonManagedGroups;
     $("ignoreInitialTabUrlForGrouping").checked = !!stored.ignoreInitialTabUrlForGrouping;
     $("ignoreInitialTabUrlForEnforcement").checked = !!stored.ignoreInitialTabUrlForEnforcement;
     $("createPinnedTabsOnNewWindow").checked = !!stored.createPinnedTabsOnNewWindow;
@@ -186,6 +188,8 @@ async function save() {
 
     const payload = {
         collapseOtherGroupsOnNavEvents: $("collapseOtherGroupsOnNavEvents").checked,
+        // Persist singleton managed-group policy exactly as represented in the settings checkbox.
+        ungroupSingletonManagedGroups: $("ungroupSingletonManagedGroups").checked,
         ignoreInitialTabUrlForGrouping: $("ignoreInitialTabUrlForGrouping").checked,
         ignoreInitialTabUrlForEnforcement: $("ignoreInitialTabUrlForEnforcement").checked,
         createPinnedTabsOnNewWindow: $("createPinnedTabsOnNewWindow").checked,

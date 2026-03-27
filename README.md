@@ -19,6 +19,9 @@ The extension runs entirely in the browser — no network calls, no analytics �
 - **Focus mode.**  
   When enabled, navigating or creating a tab collapses all other groups in the window so the active group remains expanded.
 
+- **Singleton managed-group behavior (optional).**  
+  You can choose what happens when a managed `∑ ` group drops to one tab. By default, the singleton group remains. If enabled, SumTabs ungroups the lone tab so the group is removed until grouping conditions are met again.
+
 ---
 
 ### Pinned Tab Startup + Enforcement (Optional)
@@ -71,6 +74,7 @@ To configure behavior:
 
 - Open the extension popup and click **Open Settings**.
 - Toggle **Collapse other groups when navigating/creating tabs** to enable or disable focus mode.
+- Toggle **Ungroup managed groups when only one tab remains** to remove singleton managed groups automatically (default is off, so singleton managed groups remain grouped).
 - Toggle **Ignore initial tab URL for grouping** and **Ignore initial tab URL for enforcement** to avoid grouping while tabs are still on their initial load.
 - Configure **Pinned tab hostnames or URLs** (one per line).
 - Enable **Create pinned tabs on new window** to seed new normal windows with pinned tabs.
