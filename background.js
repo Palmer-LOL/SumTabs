@@ -12,6 +12,7 @@ let COMMON_MULTIPART_SUFFIXES = new Set(DEFAULTS.commonMultipartSuffixes);
 let EXCLUDED_FROM_ROOT_COLLAPSE = new Set(DEFAULTS.excludedFromRootCollapse);
 let AUTO_GROUP_PREFIX = DEFAULTS.autoGroupPrefix;
 let COLLAPSE_OTHER_GROUPS_ON_NAV_EVENTS = DEFAULTS.collapseOtherGroupsOnNavEvents;
+let UNGROUP_SINGLETON_MANAGED_GROUPS = DEFAULTS.ungroupSingletonManagedGroups;
 let IGNORE_INITIAL_TAB_URL_FOR_GROUPING = DEFAULTS.ignoreInitialTabUrlForGrouping;
 let IGNORE_INITIAL_TAB_URL_FOR_ENFORCEMENT = DEFAULTS.ignoreInitialTabUrlForEnforcement;
 let CREATE_PINNED_TABS_ON_NEW_WINDOW = DEFAULTS.createPinnedTabsOnNewWindow;
@@ -26,6 +27,7 @@ const VALID_GROUP_COLORS = new Set(["grey", "blue", "red", "yellow", "green", "p
 function rebuildDerived() {
     AUTO_GROUP_PREFIX = settings.autoGroupPrefix ?? DEFAULTS.autoGroupPrefix;
     COLLAPSE_OTHER_GROUPS_ON_NAV_EVENTS = !!settings.collapseOtherGroupsOnNavEvents;
+    UNGROUP_SINGLETON_MANAGED_GROUPS = !!settings.ungroupSingletonManagedGroups;
     IGNORE_INITIAL_TAB_URL_FOR_GROUPING = !!settings.ignoreInitialTabUrlForGrouping;
     IGNORE_INITIAL_TAB_URL_FOR_ENFORCEMENT = !!settings.ignoreInitialTabUrlForEnforcement;
     CREATE_PINNED_TABS_ON_NEW_WINDOW = !!settings.createPinnedTabsOnNewWindow;
