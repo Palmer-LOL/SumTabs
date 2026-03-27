@@ -414,6 +414,38 @@ async function findExistingGroupIdForIdentity(matches, groupIdentity) {
     return null;
 }
 
+async function cleanupManagedSingletonGroupsInWindow(windowId) {
+    if (windowId == null) return;
+
+    // false/default => keep singleton grouped; true => ungroup singleton managed group.
+    if (!UNGROUP_SINGLETON_MANAGED_GROUPS) return;
+
+    try {
+        const tabs = await chrome.tabs.query({ windowId });
+        const tabsByGroupId = new Map();
+
+        for (const t of tabs) {
+            const gid = t?.groupId;
+            if (gid == null || gid === NONE) continue;
+
+            if (!tabsByGroupId.has(gid)) tabsByGroupId.set(gid, []);
+            tabsByGroupId.get(gid).push(t);
+        }
+
+        for (const [gid, groupedTabs] of tabsByGroupId.entries()) {
+            if (groupedTabs.length !== 1) continue;
+
+            const title = await getGroupTitle(gid);
+            if (!title || !title.startsWith(AUTO_GROUP_PREFIX)) continue;
+
+            const [singletonTab] = groupedTabs;
+            if (!singletonTab?.id || singletonTab.pinned) continue;
+
+            await ungroupTab(singletonTab.id);
+        }
+    } catch {}
+}
+
 async function enforceGroupMembershipForTab(tab, currentGrouping) {
     if (!tab || tab.id == null) return;
     if (tab.pinned) return;
