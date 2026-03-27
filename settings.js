@@ -151,6 +151,7 @@ function syncAdvancedJsonFromUi() {
 async function load() {
     const stored = await chrome.storage.sync.get(DEFAULTS);
     $("collapseOtherGroupsOnNavEvents").checked = !!stored.collapseOtherGroupsOnNavEvents;
+    $("ungroupSingletonManagedGroups").checked = !!stored.ungroupSingletonManagedGroups;
     $("ignoreInitialTabUrlForGrouping").checked = !!stored.ignoreInitialTabUrlForGrouping;
     $("ignoreInitialTabUrlForEnforcement").checked = !!stored.ignoreInitialTabUrlForEnforcement;
     $("createPinnedTabsOnNewWindow").checked = !!stored.createPinnedTabsOnNewWindow;
@@ -186,6 +187,7 @@ async function save() {
 
     const payload = {
         collapseOtherGroupsOnNavEvents: $("collapseOtherGroupsOnNavEvents").checked,
+        ungroupSingletonManagedGroups: $("ungroupSingletonManagedGroups").checked,
         ignoreInitialTabUrlForGrouping: $("ignoreInitialTabUrlForGrouping").checked,
         ignoreInitialTabUrlForEnforcement: $("ignoreInitialTabUrlForEnforcement").checked,
         createPinnedTabsOnNewWindow: $("createPinnedTabsOnNewWindow").checked,
