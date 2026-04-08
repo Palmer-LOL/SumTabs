@@ -52,11 +52,6 @@ function arrayToLines(arr) {
     return (arr || []).join("\n");
 }
 
-function syncPinnedTabsEnabledState() {
-    const enabled = $("enforcePinnedTabs").checked || $("createPinnedTabsOnNewWindow").checked;
-    $("pinnedTabs").disabled = !enabled;
-}
-
 function setStatus(msg, ok = true) {
     const el = $("status");
     el.textContent = msg;
@@ -155,10 +150,6 @@ async function load() {
     $("ungroupSingletonManagedGroups").checked = !!stored.ungroupSingletonManagedGroups;
     $("ignoreInitialTabUrlForGrouping").checked = !!stored.ignoreInitialTabUrlForGrouping;
     $("ignoreInitialTabUrlForEnforcement").checked = !!stored.ignoreInitialTabUrlForEnforcement;
-    $("createPinnedTabsOnNewWindow").checked = !!stored.createPinnedTabsOnNewWindow;
-    $("enforcePinnedTabs").checked = !!stored.enforcePinnedTabs;
-    $("pinnedTabs").value = arrayToLines(stored.pinnedTabs);
-    syncPinnedTabsEnabledState();
 
     // Keep legacy storage keys; the UI now describes these as separation rules.
     $("commonMultipartSuffixes").value = arrayToLines(stored.commonMultipartSuffixes);
@@ -192,9 +183,6 @@ async function save() {
         ungroupSingletonManagedGroups: $("ungroupSingletonManagedGroups").checked,
         ignoreInitialTabUrlForGrouping: $("ignoreInitialTabUrlForGrouping").checked,
         ignoreInitialTabUrlForEnforcement: $("ignoreInitialTabUrlForEnforcement").checked,
-        createPinnedTabsOnNewWindow: $("createPinnedTabsOnNewWindow").checked,
-        enforcePinnedTabs: $("enforcePinnedTabs").checked,
-        pinnedTabs: linesToArray($("pinnedTabs").value),
         // Keep the stored key names backward-compatible with existing sync data.
         commonMultipartSuffixes: linesToArray($("commonMultipartSuffixes").value),
         excludedFromRootCollapse: linesToArray($("excludedFromRootCollapse").value),
@@ -233,9 +221,6 @@ $("groupColor").addEventListener("change", () => {
     updateSelectedGroupFromInputs();
     syncAdvancedJsonFromUi();
 });
-
-$("createPinnedTabsOnNewWindow").addEventListener("change", syncPinnedTabsEnabledState);
-$("enforcePinnedTabs").addEventListener("change", syncPinnedTabsEnabledState);
 
 $("addGroup").addEventListener("click", () => {
     updateSelectedGroupFromInputs();
