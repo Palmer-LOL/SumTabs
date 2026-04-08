@@ -5,9 +5,6 @@ export const DEFAULTS = {
 
     ignoreInitialTabUrlForGrouping: true,
     ignoreInitialTabUrlForEnforcement: true,
-    createPinnedTabsOnNewWindow: false,
-    enforcePinnedTabs: false,
-    pinnedTabs: [],
 
     // Storage key kept for backward compatibility: domain-wide subdomain separation rules
     commonMultipartSuffixes: [
