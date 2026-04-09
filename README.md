@@ -24,15 +24,6 @@ The extension runs entirely in the browser â€” no network calls, no analytics â€
 
 ---
 
-### Pinned Tab Startup + Enforcement (Optional)
-
-- **Optional pinned-tab enforcement.**  
-  Use a user-defined list of hostnames/URLs to manage pinned tabs in normal windows:
-  - **Create pinned tabs on new window.** On each newly created normal window, SumTabs opens pinned tabs for each configured entry and does not continuously reconcile afterward.
-  - **Enforce pinned tabs continuously.** SumTabs continuously ensures at least one pinned tab exists per configured hostname in every normal window. Matching is by hostname only (path/query/hash ignored).
-
----
-
 ### Custom Grouping Rules
 
 - **Custom bundles.**  
@@ -76,9 +67,6 @@ To configure behavior:
 - Toggle **Collapse other groups when navigating/creating tabs** to enable or disable focus mode.
 - Toggle **Ungroup managed groups when only one tab remains** to remove singleton managed groups automatically (default is off, so singleton managed groups remain grouped).
 - Toggle **Ignore initial tab URL for grouping** and **Ignore initial tab URL for enforcement** to avoid grouping while tabs are still on their initial load.
-- Configure **Pinned tab hostnames or URLs** (one per line).
-- Enable **Create pinned tabs on new window** to seed new normal windows with pinned tabs.
-- Enable **Enforce pinned tabs continuously** to keep pinned tabs present by hostname (regardless of URL path) without stealing focus.
 - Add entries under **Domain-wide subdomain separation rules** (one per line) to keep matching subdomain families separate when needed.
 - Add **Exact-host separation rules** (one per line) to keep specific hosts separate from their broader domain grouping.
 - Use the **Custom domain bundles** editor to create/manage domain groupings and optionally choose a bundle color.
