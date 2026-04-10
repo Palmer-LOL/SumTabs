@@ -67,6 +67,17 @@
   margin: 6px 0;
 }
 
+.button--danger {
+  border: 1px solid #9f2020;
+  color: #9f2020;
+  background: #fff;
+}
+
+.button--danger:hover,
+.button--danger:focus-visible {
+  background: #fff2f2;
+}
+
 .checkbox-field__input {
   margin-right: var(--spacing-xs);
 }

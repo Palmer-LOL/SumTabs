@@ -13,6 +13,7 @@ const domainActionRowEl = document.getElementById("domainActionRow");
 const domainActionLabelEl = document.getElementById("domainActionLabel");
 const domainActionStatusEl = document.getElementById("domainActionStatus");
 const toggleDomainActionButton = document.getElementById("toggleDomainAction");
+const closeAllInWindowButton = document.getElementById("closeAllInWindow");
 
 let quickActionContext = null;
 let quickActionInFlight = false;
@@ -187,6 +188,32 @@ async function toggleDomainAction() {
     }
 }
 
+async function closeAllUnpinnedTabsInCurrentWindow() {
+    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const windowId = activeTab?.windowId;
+    if (windowId == null) return;
+
+    const tabsInWindow = await chrome.tabs.query({ windowId });
+    const pinnedTabs = tabsInWindow.filter((tab) => tab?.pinned === true);
+    const unpinnedTabs = tabsInWindow.filter((tab) => tab?.id != null && tab.pinned !== true);
+
+    if (unpinnedTabs.length === 0) return;
+
+    let replacementTabId = null;
+    if (pinnedTabs.length === 0) {
+        const replacementTab = await chrome.tabs.create({ windowId, active: true });
+        replacementTabId = replacementTab?.id ?? null;
+    }
+
+    const tabIdsToClose = unpinnedTabs
+        .map((tab) => tab.id)
+        .filter((tabId) => tabId != null && tabId !== replacementTabId);
+
+    if (tabIdsToClose.length === 0) return;
+
+    await chrome.tabs.remove(tabIdsToClose);
+}
+
 async function renderActiveTabStatus() {
     const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
@@ -256,6 +283,20 @@ toggleExactActionButton.addEventListener("click", () => {
 toggleDomainActionButton.addEventListener("click", () => {
     toggleDomainAction().catch((error) => {
         console.error("Failed to update domain-wide separation rule", error);
+    });
+});
+
+closeAllInWindowButton?.addEventListener("click", () => {
+    const confirmed = window.confirm(
+        "Close all unpinned tabs and clear all tab groups in this window only?\n\nPinned tabs will not be touched."
+    );
+
+    if (!confirmed) return;
+
+    closeAllUnpinnedTabsInCurrentWindow().then(() => {
+        window.close();
+    }).catch((error) => {
+        console.error("Failed to close unpinned tabs in current window", error);
     });
 });
 
