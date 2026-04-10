@@ -189,8 +189,8 @@ async function toggleDomainAction() {
 }
 
 async function closeAllUnpinnedTabsInCurrentWindow() {
-    const currentWindow = await chrome.windows.getCurrent();
-    const windowId = currentWindow?.id;
+    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const windowId = activeTab?.windowId;
     if (windowId == null) return;
 
     const tabsInWindow = await chrome.tabs.query({ windowId });
