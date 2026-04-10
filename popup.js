@@ -13,9 +13,11 @@ const domainActionRowEl = document.getElementById("domainActionRow");
 const domainActionLabelEl = document.getElementById("domainActionLabel");
 const domainActionStatusEl = document.getElementById("domainActionStatus");
 const toggleDomainActionButton = document.getElementById("toggleDomainAction");
+const closeAllTabsAndGroupsButton = document.getElementById("closeAllTabsAndGroups");
 
 let quickActionContext = null;
 let quickActionInFlight = false;
+let closeAllActionInFlight = false;
 
 function normalizeLowerList(values) {
     return new Set(Array.from(values ?? []).map((value) => String(value ?? "").trim().toLowerCase()).filter(Boolean));
@@ -242,6 +244,37 @@ async function renderActiveTabStatus() {
     });
 }
 
+async function closeAllTabsAndGroupsForCurrentWindow() {
+    if (closeAllActionInFlight) return;
+
+    const confirmed = window.confirm(
+        "Close all unpinned tabs and remove tab groups in this window?\n\nPinned tabs will not be touched."
+    );
+    if (!confirmed) return;
+
+    closeAllActionInFlight = true;
+    closeAllTabsAndGroupsButton.disabled = true;
+
+    try {
+        const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        const windowId = activeTab?.windowId;
+        if (windowId == null) {
+            throw new Error("No current window id available for close-all action.");
+        }
+
+        await chrome.runtime.sendMessage({
+            type: "CLOSE_ALL_TABS_AND_GROUPS",
+            scope: "current-window",
+            windowId,
+        });
+    } catch (error) {
+        console.error("Failed to close tabs/groups from popup action", error);
+    } finally {
+        closeAllActionInFlight = false;
+        closeAllTabsAndGroupsButton.disabled = false;
+    }
+}
+
 document.getElementById("openSettings").addEventListener("click", async () => {
     await chrome.runtime.openOptionsPage();
     window.close();
@@ -256,6 +289,12 @@ toggleExactActionButton.addEventListener("click", () => {
 toggleDomainActionButton.addEventListener("click", () => {
     toggleDomainAction().catch((error) => {
         console.error("Failed to update domain-wide separation rule", error);
+    });
+});
+
+closeAllTabsAndGroupsButton?.addEventListener("click", () => {
+    closeAllTabsAndGroupsForCurrentWindow().catch((error) => {
+        console.error("Failed to run close-all action", error);
     });
 });
 

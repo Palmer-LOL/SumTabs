@@ -83,6 +83,14 @@ To configure behavior:
 - Add **Exact-host separation rules** (one per line) to keep specific hosts separate from their broader domain grouping.
 - Use the **Custom domain bundles** editor to create/manage domain groupings and optionally choose a bundle color.
 
+### Destructive Action Scope (Current Window Only)
+
+The popup’s destructive **Close all tabs & groups** control is intentionally scoped to the **current window only**. It does not affect tabs in other browser windows.
+
+Safety guarantees for that action:
+- Pinned tabs are never touched.
+- If no pinned tabs exist in the current window, a new tab is created before closing other tabs so the window stays open.
+
 ---
 
 ## Code Structure

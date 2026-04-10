@@ -129,6 +129,7 @@ const lastSeenUrlByTab = new Map(); // tabId -> last seen tab.url
 const initialUrlByTab = new Map(); // tabId -> first seen http(s) URL
 
 const pinnedEnforcementInFlightByWindow = new Map();
+const bulkCloseInFlightByWindow = new Map();
 
 function parsePinnedEntry(rawEntry) {
     const raw = String(rawEntry || "").trim();
@@ -564,13 +565,101 @@ async function collapseAllGroupsExcept(windowId, keepGroupId) {
     } catch {}
 }
 
+async function closeAllTabsAndGroupsInWindow(windowId) {
+    if (windowId == null) {
+        return { ok: false, reason: "missing-window-id" };
+    }
+
+    try {
+        const win = await chrome.windows.get(windowId);
+        if (!win || win.type !== "normal") {
+            return { ok: false, reason: "unsupported-window" };
+        }
+    } catch {
+        return { ok: false, reason: "window-not-found" };
+    }
+
+    if (bulkCloseInFlightByWindow.has(windowId)) {
+        return { ok: false, reason: "bulk-close-in-flight" };
+    }
+
+    const task = (async () => {
+        const tabs = await chrome.tabs.query({ windowId });
+        const pinnedTabs = tabs.filter((tab) => !!tab?.pinned);
+        const unpinnedTabIds = tabs.filter((tab) => !!tab?.id && !tab.pinned).map((tab) => tab.id);
+
+        if (unpinnedTabIds.length === 0) {
+            return { ok: true, closedTabCount: 0, keptPinnedCount: pinnedTabs.length };
+        }
+
+        let keepTabId = null;
+
+        // Safety guard: if no pinned tabs exist, create one tab before closing the rest so the window remains open.
+        if (pinnedTabs.length === 0) {
+            try {
+                acquireMutationLock(500);
+                const keepTab = await chrome.tabs.create({ windowId, url: "about:blank", active: true });
+                keepTabId = keepTab?.id ?? null;
+            } catch {}
+        }
+
+        const removableTabIds = keepTabId == null
+            ? unpinnedTabIds
+            : unpinnedTabIds.filter((tabId) => tabId !== keepTabId);
+
+        if (removableTabIds.length > 0) {
+            try {
+                acquireMutationLock(500);
+                await chrome.tabs.remove(removableTabIds);
+            } catch {}
+        }
+
+        return {
+            ok: true,
+            closedTabCount: removableTabIds.length,
+            keptPinnedCount: pinnedTabs.length,
+            createdKeepAliveTab: keepTabId != null,
+        };
+    })();
+
+    bulkCloseInFlightByWindow.set(windowId, task);
+    try {
+        return await task;
+    } finally {
+        bulkCloseInFlightByWindow.delete(windowId);
+    }
+}
+
 // -------------------- EVENT HANDLERS --------------------
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (!message || message.type !== "CLOSE_ALL_TABS_AND_GROUPS") return;
+
+    (async () => {
+        try {
+            // Intentionally scoped to the current window only.
+            if (message.scope !== "current-window" || message.windowId == null) {
+                sendResponse({ ok: false, reason: "invalid-scope-or-window" });
+                return;
+            }
+
+            const result = await closeAllTabsAndGroupsInWindow(message.windowId);
+            sendResponse(result);
+        } catch (error) {
+            console.error("Failed CLOSE_ALL_TABS_AND_GROUPS", error);
+            sendResponse({ ok: false, reason: "unexpected-error" });
+        }
+    })();
+
+    return true;
+});
 
 chrome.tabs.onCreated.addListener(async (tab) => {
     try {
         await settingsReady;
         if (!tab || tab.id == null) return;
         if (tab.pinned) return;
+        if (bulkCloseInFlightByWindow.has(tab.windowId)) return;
 
         if (underMutationLock()) return;
         if (!shouldProcessTab(tab.id)) return;
@@ -599,6 +688,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
         await settingsReady;
         if (!tab || tab.id == null) return;
         if (tab.pinned) return;
+        if (bulkCloseInFlightByWindow.has(tab.windowId)) return;
 
         if (underMutationLock()) return;
         if (!shouldProcessTab(tabId)) return;
@@ -649,6 +739,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 chrome.tabs.onActivated.addListener(async (activeInfo) => {
     try {
         await settingsReady;
+        if (bulkCloseInFlightByWindow.has(activeInfo.windowId)) return;
         if (underMutationLock()) return;
         await handleActivation(activeInfo.tabId, activeInfo.windowId);
     } catch {}
@@ -667,6 +758,7 @@ chrome.tabs.onRemoved.addListener(async (_tabId, removeInfo) => {
     try {
         await settingsReady;
         if (!removeInfo || removeInfo.windowId == null || removeInfo.isWindowClosing) return;
+        if (bulkCloseInFlightByWindow.has(removeInfo.windowId)) return;
 
         // Canonical semantics: this helper only ungroups singleton managed groups
         // when UNGROUP_SINGLETON_MANAGED_GROUPS is enabled.
@@ -682,6 +774,7 @@ chrome.tabs.onUpdated.addListener(async (_tabId, changeInfo, tab) => {
         await settingsReady;
         if (!settings.enforcePinnedTabs) return;
         if (!tab || tab.windowId == null) return;
+        if (bulkCloseInFlightByWindow.has(tab.windowId)) return;
 
         const hasRelevantChange = Object.prototype.hasOwnProperty.call(changeInfo, "pinned") || !!changeInfo.url || !!changeInfo.status;
         if (!hasRelevantChange) return;
@@ -701,6 +794,7 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
     try {
         await settingsReady;
         if (windowId == null || windowId < 0) return;
+        if (bulkCloseInFlightByWindow.has(windowId)) return;
         if (underMutationLock()) return;
 
         const [activeTab] = await chrome.tabs.query({ windowId, active: true });
