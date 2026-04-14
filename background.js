@@ -141,8 +141,9 @@ function isManagedGroupTitle(title) {
 function getGroupingForUrl(parsedUrl) {
     // Shared precedence lives in grouping.js: exact custom bundles first, then inherited root-domain bundles, then default separation rules.
     return resolveGroupingForHostname({
+        url: parsedUrl.href,
         hostname: parsedUrl.hostname,
-        parsedUrl,
+        pathname: parsedUrl.pathname,
         commonMultipartSuffixes: COMMON_MULTIPART_SUFFIXES,
         excludedFromRootCollapse: EXCLUDED_FROM_ROOT_COLLAPSE,
         customBundleMaps,
