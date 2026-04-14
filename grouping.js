@@ -17,24 +17,163 @@ function getMapValue(mapLike, key) {
     return value == null ? null : value;
 }
 
-export function buildCustomBundleMaps(customDomainGroups) {
-    const exactHostnameToBundleTitle = new Map();
-    const rootDomainToBundleTitle = new Map();
+function normalizePathPrefix(pathLike) {
+    let path = `/${String(pathLike ?? "")}`;
+    path = path.replace(/\/+/g, "/");
+
+    if (path.endsWith("/*")) {
+        path = path.slice(0, -2) || "/";
+    }
+
+    while (path.length > 1 && path.endsWith("/")) {
+        path = path.slice(0, -1);
+    }
+
+    return path;
+}
+
+export function parseCustomDomainRule(domainEntry) {
+    const raw = String(domainEntry ?? "").trim();
+    const result = {
+        raw,
+        hostname: "",
+        pathPrefix: null,
+        matchMode: "host_only",
+        valid: false,
+        error: null,
+    };
+
+    if (!raw) {
+        result.error = "Domain entry is empty.";
+        return result;
+    }
+
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) {
+        result.error = "Protocols are not allowed.";
+        return result;
+    }
+
+    const slashIndex = raw.indexOf("/");
+    const hostnamePart = slashIndex === -1 ? raw : raw.slice(0, slashIndex);
+    const normalizedHostname = toLowerString(hostnamePart);
+
+    if (!normalizedHostname) {
+        result.error = "Hostname is required.";
+        return result;
+    }
+
+    result.hostname = normalizedHostname;
+
+    if (slashIndex === -1) {
+        result.valid = true;
+        return result;
+    }
+
+    const rawPath = raw.slice(slashIndex + 1);
+    const normalizedPathPrefix = normalizePathPrefix(rawPath);
+
+    if (normalizedPathPrefix && normalizedPathPrefix !== "/") {
+        result.pathPrefix = normalizedPathPrefix;
+        result.matchMode = "host_path_prefix";
+    }
+
+    result.valid = true;
+    return result;
+}
+
+export function parseCustomDomainGroups(customDomainGroups) {
+    const parsedGroups = [];
 
     for (const group of customDomainGroups ?? []) {
         const title = String(group?.title ?? "").trim();
         if (!title || !Array.isArray(group?.domains)) continue;
 
-        for (const domain of group.domains) {
-            const normalizedDomain = toLowerString(domain);
-            if (!normalizedDomain) continue;
+        const parsedRules = group.domains.map((domain) => parseCustomDomainRule(domain));
+        parsedGroups.push({
+            title,
+            parsedRules,
+        });
+    }
 
-            exactHostnameToBundleTitle.set(normalizedDomain, title);
-            rootDomainToBundleTitle.set(normalizedDomain, title);
+    return parsedGroups;
+}
+
+export function buildCustomBundleMaps(customDomainGroups) {
+    const exactHostnameToBundleRules = new Map();
+    const rootDomainToBundleRules = new Map();
+
+    for (const group of parseCustomDomainGroups(customDomainGroups)) {
+        for (const rule of group.parsedRules) {
+            if (!rule.valid) continue;
+
+            const exactRules = exactHostnameToBundleRules.get(rule.hostname) ?? [];
+            exactRules.push({ title: group.title, rule });
+            exactHostnameToBundleRules.set(rule.hostname, exactRules);
+
+            const rootRules = rootDomainToBundleRules.get(rule.hostname) ?? [];
+            rootRules.push({ title: group.title, rule });
+            rootDomainToBundleRules.set(rule.hostname, rootRules);
         }
     }
 
-    return { exactHostnameToBundleTitle, rootDomainToBundleTitle };
+    return { exactHostnameToBundleRules, rootDomainToBundleRules };
+}
+
+// Matcher behavior is intentionally strict to prevent prefix false-positives:
+// 1) Hostname must match exactly before any path checks.
+// 2) If rule.pathPrefix exists, match only when pathname is exactly rule.pathPrefix
+//    or starts with `${rule.pathPrefix}/` (so `/codexx` does not match `/codex`).
+// 3) Matching uses URL.pathname only; query string and hash are ignored by design.
+export function matchesParsedUrlAgainstRule(parsedUrl, rule) {
+    if (!parsedUrl || !rule?.hostname) return false;
+
+    const parsedHostname = toLowerString(parsedUrl.hostname);
+    if (!parsedHostname || parsedHostname !== rule.hostname) return false;
+
+    if (!rule.pathPrefix) return true;
+
+    const pathname = normalizePathPrefix(parsedUrl.pathname || "/");
+    if (pathname === rule.pathPrefix) return true;
+
+    return pathname.startsWith(`${rule.pathPrefix}/`);
+}
+
+function findWinningBundleRule(ruleEntries, parsedUrl) {
+    if (!Array.isArray(ruleEntries) || ruleEntries.length === 0) return null;
+
+    const candidates = [];
+    for (let idx = 0; idx < ruleEntries.length; idx += 1) {
+        const entry = ruleEntries[idx];
+        const rule = entry?.rule;
+        if (!matchesParsedUrlAgainstRule(parsedUrl, rule)) continue;
+
+        candidates.push({
+            idx,
+            title: entry.title,
+            hostnameLen: rule.hostname.length,
+            hasPathRule: Boolean(rule.pathPrefix),
+            pathLen: rule.pathPrefix ? rule.pathPrefix.length : -1,
+            rule,
+        });
+    }
+
+    if (candidates.length === 0) return null;
+
+    candidates.sort((a, b) => {
+        // Precedence for overlapping custom bundle matches:
+        // 1) Longer hostname specificity (exact-host map still compares equally here)
+        // 2) Path rule over host-only rule
+        //    Example: chatgpt.com vs chatgpt.com/codex -> /codex rule wins for /codex paths.
+        // 3) Longer pathPrefix among path rules
+        //    Example: chatgpt.com/codex vs chatgpt.com/codex/agents -> /codex/agents wins.
+        // 4) Stable declaration-order fallback (earlier declared rule wins ties)
+        if (a.hostnameLen !== b.hostnameLen) return b.hostnameLen - a.hostnameLen;
+        if (a.hasPathRule !== b.hasPathRule) return Number(b.hasPathRule) - Number(a.hasPathRule);
+        if (a.pathLen !== b.pathLen) return b.pathLen - a.pathLen;
+        return a.idx - b.idx;
+    });
+
+    return candidates[0];
 }
 
 export function getRootDomain(hostname, commonMultipartSuffixes) {
@@ -103,7 +242,10 @@ export function getDomainWideSeparationRule(hostname, commonMultipartSuffixes) {
 }
 
 export function resolveGroupingForHostname({
+    url,
     hostname,
+    pathname,
+    parsedUrl,
     commonMultipartSuffixes,
     excludedFromRootCollapse,
     customBundleMaps,
@@ -112,13 +254,23 @@ export function resolveGroupingForHostname({
     const normalizedHostname = toLowerString(hostname);
     const prefix = String(managedPrefix ?? "");
     const { rootDomain, matchedSuffix } = getRootDomain(normalizedHostname, commonMultipartSuffixes);
+    let normalizedParsedUrl = parsedUrl instanceof URL ? parsedUrl : null;
+    if (!normalizedParsedUrl && typeof url === "string" && url.trim()) {
+        try {
+            normalizedParsedUrl = new URL(url);
+        } catch {}
+    }
+    if (!normalizedParsedUrl && normalizedHostname) {
+        const normalizedPathname = normalizePathPrefix(pathname || "/");
+        normalizedParsedUrl = new URL(`https://${normalizedHostname}${normalizedPathname}`);
+    }
 
     const excludedHostnames = excludedFromRootCollapse instanceof Set
         ? excludedFromRootCollapse
         : new Set((excludedFromRootCollapse ?? []).map((value) => toLowerString(value)).filter(Boolean));
 
-    const exactHostnameToBundleTitle = customBundleMaps?.exactHostnameToBundleTitle;
-    const rootDomainToBundleTitle = customBundleMaps?.rootDomainToBundleTitle;
+    const exactHostnameToBundleRules = customBundleMaps?.exactHostnameToBundleRules;
+    const rootDomainToBundleRules = customBundleMaps?.rootDomainToBundleRules;
 
     const isExactHostSeparated = excludedHostnames.has(normalizedHostname);
     // Exact-host separation only changes the default fallback key.
@@ -127,32 +279,43 @@ export function resolveGroupingForHostname({
     const bundleInheritanceKey = rootDomain;
 
     // An exact bundle match is the most specific result and wins before inherited root-domain bundles.
-    const exactBundleTitle = getMapValue(exactHostnameToBundleTitle, normalizedHostname);
-    if (exactBundleTitle) {
+    const exactRuleEntries = getMapValue(exactHostnameToBundleRules, normalizedHostname);
+    const exactWinningRule = findWinningBundleRule(exactRuleEntries, normalizedParsedUrl);
+    if (exactWinningRule) {
         return {
             hostname: normalizedHostname,
             groupKey: normalizedHostname,
-            identity: `${prefix}${exactBundleTitle}`,
+            identity: `${prefix}${exactWinningRule.title}`,
             reason: "custom-bundle-grouping",
             matchedSuffix,
-            matchedExactHostname: normalizedHostname,
-            matchedCustomBundleTitle: exactBundleTitle,
-            displayGroupingLabel: exactBundleTitle,
+            matchedExactHostname: exactWinningRule.rule.hostname,
+            matchedCustomBundleTitle: exactWinningRule.title,
+            displayGroupingLabel: exactWinningRule.title,
         };
     }
 
     // If there is no exact bundle, inherit from the root-domain bundle even when default grouping stays host-specific.
-    const rootBundleTitle = getMapValue(rootDomainToBundleTitle, bundleInheritanceKey);
-    if (rootBundleTitle) {
+    // Root-domain inheritance should evaluate rules as if the current URL were on the root hostname so
+    // host-only rules like "example.com" still match subdomains like "foo.example.com".
+    let rootInheritanceParsedUrl = normalizedParsedUrl;
+    if (normalizedParsedUrl && bundleInheritanceKey) {
+        rootInheritanceParsedUrl = new URL(normalizedParsedUrl.toString());
+        rootInheritanceParsedUrl.hostname = bundleInheritanceKey;
+    }
+
+    // Inherited root-domain matching still uses full precedence logic within root-domain rules.
+    const rootRuleEntries = getMapValue(rootDomainToBundleRules, bundleInheritanceKey);
+    const rootWinningRule = findWinningBundleRule(rootRuleEntries, rootInheritanceParsedUrl);
+    if (rootWinningRule) {
         return {
             hostname: normalizedHostname,
             groupKey: bundleInheritanceKey,
-            identity: `${prefix}${rootBundleTitle}`,
+            identity: `${prefix}${rootWinningRule.title}`,
             reason: "custom-bundle-grouping",
             matchedSuffix,
-            matchedExactHostname: isExactHostSeparated ? normalizedHostname : null,
-            matchedCustomBundleTitle: rootBundleTitle,
-            displayGroupingLabel: rootBundleTitle,
+            matchedExactHostname: rootWinningRule.rule.hostname,
+            matchedCustomBundleTitle: rootWinningRule.title,
+            displayGroupingLabel: rootWinningRule.title,
         };
     }
 
