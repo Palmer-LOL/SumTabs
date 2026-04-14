@@ -68,7 +68,8 @@
 
       <div class="bundle-editor__row">
         <label class="settings__field-label" for="groupDomains">Domains (one per line)</label>
-        <textarea class="textarea" id="groupDomains" placeholder="nytimes.com&#10;theatlantic.com"></textarea>
+        <textarea class="textarea" id="groupDomains" placeholder="nytimes.com&#10;chatgpt.com/codex"></textarea>
+        <div class="settings__small-text" id="groupDomainsValidation">All entries are valid.</div>
       </div>
 
       <div class="bundle-editor__row">
@@ -89,7 +90,7 @@
     </div>
 
     <div class="settings__small-text settings__details-note">
-      Each bundle has a title and a list of domains (one per line). Example title: “News”, domains: nytimes.com, theatlantic.com
+      Each bundle has a title and a list of rules (one per line). Path rules are prefix-matched, and trailing <code>*</code> is optional. Example title: “AI”, rules: <code>chatgpt.com/codex</code>, <code>openai.com/research/*</code>
     </div>
 
     <details class="settings__details">
