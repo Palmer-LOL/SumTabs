@@ -14,6 +14,7 @@ const domainActionLabelEl = document.getElementById("domainActionLabel");
 const domainActionStatusEl = document.getElementById("domainActionStatus");
 const toggleDomainActionButton = document.getElementById("toggleDomainAction");
 const closeAllInWindowButton = document.getElementById("closeAllInWindow");
+const forceReevaluateButton = document.getElementById("forceReevaluate");
 
 let quickActionContext = null;
 let quickActionInFlight = false;
@@ -284,6 +285,24 @@ toggleDomainActionButton.addEventListener("click", () => {
     toggleDomainAction().catch((error) => {
         console.error("Failed to update domain-wide separation rule", error);
     });
+});
+
+
+forceReevaluateButton?.addEventListener("click", async () => {
+    if (!forceReevaluateButton) return;
+
+    const originalLabel = forceReevaluateButton.textContent;
+    forceReevaluateButton.disabled = true;
+    forceReevaluateButton.textContent = "Reevaluating…";
+
+    try {
+        await chrome.runtime.sendMessage({ type: "sumtabs:force-reevaluate" });
+        window.close();
+    } catch (error) {
+        console.error("Failed to force reevaluation", error);
+        forceReevaluateButton.disabled = false;
+        forceReevaluateButton.textContent = originalLabel ?? "Reevaluate open tabs now";
+    }
 });
 
 closeAllInWindowButton?.addEventListener("click", () => {

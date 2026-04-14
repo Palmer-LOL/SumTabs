@@ -134,6 +134,10 @@ function getHostnameFromTab(tab, changeInfo) {
     return u.hostname;
 }
 
+function isManagedGroupTitle(title) {
+    return !!title && title.startsWith(AUTO_GROUP_PREFIX);
+}
+
 function getGroupingForHostname(hostname) {
     // Shared precedence lives in grouping.js: exact custom bundles first, then inherited root-domain bundles, then default separation rules.
     return resolveGroupingForHostname({
@@ -455,6 +459,56 @@ async function collapseAllGroupsExcept(windowId, keepGroupId) {
     } catch {}
 }
 
+
+
+async function forceReevaluateAllWindows() {
+    await settingsReady;
+
+    const windows = await chrome.windows.getAll();
+
+    for (const win of windows) {
+        const windowId = win?.id;
+        if (windowId == null) continue;
+
+        const tabs = await chrome.tabs.query({ windowId });
+
+        for (const tab of tabs) {
+            if (!tab || tab.id == null || tab.pinned || tab.windowId == null) continue;
+
+            const parsed = safeParseUrl(tab.url || tab.pendingUrl);
+            if (!isWebUrl(parsed)) continue;
+
+            const grouping = resolveTabGrouping(tab);
+            if (!grouping?.identity) continue;
+
+            await maybeGroupTab(tab, grouping);
+        }
+
+        await cleanupManagedSingletonGroupsInWindow(windowId);
+
+        if (COLLAPSE_OTHER_GROUPS_ON_NAV_EVENTS) {
+            const [activeTab] = await chrome.tabs.query({ windowId, active: true });
+            await collapseAllGroupsExcept(windowId, activeTab?.groupId ?? NONE);
+        }
+
+        const refreshedTabs = await chrome.tabs.query({ windowId });
+
+        for (const tab of refreshedTabs) {
+            if (!tab || tab.id == null || tab.pinned) continue;
+            if (tab.groupId == null || tab.groupId === NONE) continue;
+
+            const title = await getGroupTitle(tab.groupId);
+            if (!isManagedGroupTitle(title)) continue;
+
+            const parsed = safeParseUrl(tab.url || tab.pendingUrl);
+            if (!isWebUrl(parsed)) continue;
+
+            const grouping = resolveTabGrouping(tab);
+            await enforceGroupMembershipForTab(tab, grouping);
+        }
+    }
+}
+
 // -------------------- EVENT HANDLERS --------------------
 
 chrome.tabs.onCreated.addListener(async (tab) => {
@@ -576,3 +630,20 @@ chrome.tabGroups.onRemoved?.addListener((group) => {
 chrome.tabGroups.onUpdated?.addListener((group) => {
     groupTitleCache.set(group.id, group.title ?? null);
 });
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type !== "sumtabs:force-reevaluate") return undefined;
+
+    (async () => {
+        try {
+            await forceReevaluateAllWindows();
+            sendResponse({ ok: true });
+        } catch (error) {
+            console.error("Failed to force tab reevaluation", error);
+            sendResponse({ ok: false, error: String(error) });
+        }
+    })();
+
+    return true;
+});
+
