@@ -40,6 +40,20 @@ The extension runs entirely in the browser â€” no network calls, no analytics â€
 - **Advanced JSON editing.**  
   A collapsible section in the settings page allows direct editing of the custom bundle configuration in JSON format.
 
+### Path-scoped bundle rules
+
+Custom bundle entries can include optional path prefixes in addition to hostnames.
+
+- `chatgpt.com/codex` and `chatgpt.com/codex/*` are treated equivalently.
+- Matching is prefix-based on `URL.pathname` boundaries, so `/codex` matches `/codex` and `/codex/agents`, but not `/codexx`.
+- Rules are canonicalized on save/load so equivalent forms collapse to one normalized entry.
+
+Precedence when multiple bundle rules overlap:
+
+1. Exact hostname rules are evaluated before inherited root-domain bundle rules.
+2. For same-host matches, path-scoped rules beat host-only rules.
+3. Longer path prefixes win over shorter prefixes; ties keep declaration order.
+
 ---
 
 ## Privacy & Permissions
