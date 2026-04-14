@@ -491,7 +491,9 @@ async function forceReevaluateAllWindows() {
             await collapseAllGroupsExcept(windowId, activeTab?.groupId ?? NONE);
         }
 
-        for (const tab of tabs) {
+        const refreshedTabs = await chrome.tabs.query({ windowId });
+
+        for (const tab of refreshedTabs) {
             if (!tab || tab.id == null || tab.pinned) continue;
             if (tab.groupId == null || tab.groupId === NONE) continue;
 
