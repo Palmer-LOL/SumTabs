@@ -295,9 +295,17 @@ export function resolveGroupingForHostname({
     }
 
     // If there is no exact bundle, inherit from the root-domain bundle even when default grouping stays host-specific.
+    // Root-domain inheritance should evaluate rules as if the current URL were on the root hostname so
+    // host-only rules like "example.com" still match subdomains like "foo.example.com".
+    let rootInheritanceParsedUrl = normalizedParsedUrl;
+    if (normalizedParsedUrl && bundleInheritanceKey) {
+        rootInheritanceParsedUrl = new URL(normalizedParsedUrl.toString());
+        rootInheritanceParsedUrl.hostname = bundleInheritanceKey;
+    }
+
     // Inherited root-domain matching still uses full precedence logic within root-domain rules.
     const rootRuleEntries = getMapValue(rootDomainToBundleRules, bundleInheritanceKey);
-    const rootWinningRule = findWinningBundleRule(rootRuleEntries, normalizedParsedUrl);
+    const rootWinningRule = findWinningBundleRule(rootRuleEntries, rootInheritanceParsedUrl);
     if (rootWinningRule) {
         return {
             hostname: normalizedHostname,
