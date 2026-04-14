@@ -17,8 +17,8 @@ let IGNORE_INITIAL_TAB_URL_FOR_GROUPING = DEFAULTS.ignoreInitialTabUrlForGroupin
 let IGNORE_INITIAL_TAB_URL_FOR_ENFORCEMENT = DEFAULTS.ignoreInitialTabUrlForEnforcement;
 
 let customBundleMaps = {
-    exactHostnameToBundleTitle: new Map(),
-    rootDomainToBundleTitle: new Map(),
+    exactHostnameToBundleRules: new Map(),
+    rootDomainToBundleRules: new Map(),
 };
 let customIdentityToColor = new Map();
 const VALID_GROUP_COLORS = new Set(["grey", "blue", "red", "yellow", "green", "pink", "purple", "cyan", "orange"]);
@@ -127,21 +127,22 @@ function safeParseUrl(urlString) {
 function isWebUrl(u) {
     return u && (u.protocol === "http:" || u.protocol === "https:");
 }
-function getHostnameFromTab(tab, changeInfo) {
+function getParsedUrlFromTab(tab, changeInfo) {
     const url = (changeInfo && changeInfo.url) || tab?.url || tab?.pendingUrl;
     const u = safeParseUrl(url);
     if (!isWebUrl(u)) return null;
-    return u.hostname;
+    return u;
 }
 
 function isManagedGroupTitle(title) {
     return !!title && title.startsWith(AUTO_GROUP_PREFIX);
 }
 
-function getGroupingForHostname(hostname) {
+function getGroupingForUrl(parsedUrl) {
     // Shared precedence lives in grouping.js: exact custom bundles first, then inherited root-domain bundles, then default separation rules.
     return resolveGroupingForHostname({
-        hostname,
+        hostname: parsedUrl.hostname,
+        parsedUrl,
         commonMultipartSuffixes: COMMON_MULTIPART_SUFFIXES,
         excludedFromRootCollapse: EXCLUDED_FROM_ROOT_COLLAPSE,
         customBundleMaps,
@@ -152,10 +153,10 @@ function getGroupingForHostname(hostname) {
 function resolveTabGrouping(tab, changeInfo) {
     if (!tab || tab.pinned) return null;
 
-    const hostname = getHostnameFromTab(tab, changeInfo);
-    if (!hostname) return null;
+    const parsedUrl = getParsedUrlFromTab(tab, changeInfo);
+    if (!parsedUrl) return null;
 
-    return getGroupingForHostname(hostname);
+    return getGroupingForUrl(parsedUrl);
 }
 
 async function withSettings(fn) {
@@ -646,4 +647,3 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
     return true;
 });
-

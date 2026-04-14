@@ -99,19 +99,54 @@ export function parseCustomDomainGroups(customDomainGroups) {
 }
 
 export function buildCustomBundleMaps(customDomainGroups) {
-    const exactHostnameToBundleTitle = new Map();
-    const rootDomainToBundleTitle = new Map();
+    const exactHostnameToBundleRules = new Map();
+    const rootDomainToBundleRules = new Map();
 
     for (const group of parseCustomDomainGroups(customDomainGroups)) {
         for (const rule of group.parsedRules) {
             if (!rule.valid) continue;
 
-            exactHostnameToBundleTitle.set(rule.hostname, group.title);
-            rootDomainToBundleTitle.set(rule.hostname, group.title);
+            const exactRules = exactHostnameToBundleRules.get(rule.hostname) ?? [];
+            exactRules.push({ title: group.title, rule });
+            exactHostnameToBundleRules.set(rule.hostname, exactRules);
+
+            const rootRules = rootDomainToBundleRules.get(rule.hostname) ?? [];
+            rootRules.push({ title: group.title, rule });
+            rootDomainToBundleRules.set(rule.hostname, rootRules);
         }
     }
 
-    return { exactHostnameToBundleTitle, rootDomainToBundleTitle };
+    return { exactHostnameToBundleRules, rootDomainToBundleRules };
+}
+
+// Matcher behavior is intentionally strict to prevent prefix false-positives:
+// 1) Hostname must match exactly before any path checks.
+// 2) If rule.pathPrefix exists, match only when pathname is exactly rule.pathPrefix
+//    or starts with `${rule.pathPrefix}/` (so `/codexx` does not match `/codex`).
+// 3) Matching uses URL.pathname only; query string and hash are ignored by design.
+export function matchesParsedUrlAgainstRule(parsedUrl, rule) {
+    if (!parsedUrl || !rule?.hostname) return false;
+
+    const parsedHostname = toLowerString(parsedUrl.hostname);
+    if (!parsedHostname || parsedHostname !== rule.hostname) return false;
+
+    if (!rule.pathPrefix) return true;
+
+    const pathname = normalizePathPrefix(parsedUrl.pathname || "/");
+    if (pathname === rule.pathPrefix) return true;
+
+    return pathname.startsWith(`${rule.pathPrefix}/`);
+}
+
+function findMatchingBundleTitle(ruleEntries, parsedUrl) {
+    if (!Array.isArray(ruleEntries) || ruleEntries.length === 0) return null;
+
+    for (let idx = ruleEntries.length - 1; idx >= 0; idx -= 1) {
+        const entry = ruleEntries[idx];
+        if (matchesParsedUrlAgainstRule(parsedUrl, entry.rule)) return entry.title;
+    }
+
+    return null;
 }
 
 export function getRootDomain(hostname, commonMultipartSuffixes) {
@@ -181,6 +216,7 @@ export function getDomainWideSeparationRule(hostname, commonMultipartSuffixes) {
 
 export function resolveGroupingForHostname({
     hostname,
+    parsedUrl,
     commonMultipartSuffixes,
     excludedFromRootCollapse,
     customBundleMaps,
@@ -189,13 +225,16 @@ export function resolveGroupingForHostname({
     const normalizedHostname = toLowerString(hostname);
     const prefix = String(managedPrefix ?? "");
     const { rootDomain, matchedSuffix } = getRootDomain(normalizedHostname, commonMultipartSuffixes);
+    const normalizedParsedUrl = parsedUrl instanceof URL
+        ? parsedUrl
+        : (normalizedHostname ? new URL(`https://${normalizedHostname}/`) : null);
 
     const excludedHostnames = excludedFromRootCollapse instanceof Set
         ? excludedFromRootCollapse
         : new Set((excludedFromRootCollapse ?? []).map((value) => toLowerString(value)).filter(Boolean));
 
-    const exactHostnameToBundleTitle = customBundleMaps?.exactHostnameToBundleTitle;
-    const rootDomainToBundleTitle = customBundleMaps?.rootDomainToBundleTitle;
+    const exactHostnameToBundleRules = customBundleMaps?.exactHostnameToBundleRules;
+    const rootDomainToBundleRules = customBundleMaps?.rootDomainToBundleRules;
 
     const isExactHostSeparated = excludedHostnames.has(normalizedHostname);
     // Exact-host separation only changes the default fallback key.
@@ -204,7 +243,8 @@ export function resolveGroupingForHostname({
     const bundleInheritanceKey = rootDomain;
 
     // An exact bundle match is the most specific result and wins before inherited root-domain bundles.
-    const exactBundleTitle = getMapValue(exactHostnameToBundleTitle, normalizedHostname);
+    const exactRuleEntries = getMapValue(exactHostnameToBundleRules, normalizedHostname);
+    const exactBundleTitle = findMatchingBundleTitle(exactRuleEntries, normalizedParsedUrl);
     if (exactBundleTitle) {
         return {
             hostname: normalizedHostname,
@@ -219,7 +259,11 @@ export function resolveGroupingForHostname({
     }
 
     // If there is no exact bundle, inherit from the root-domain bundle even when default grouping stays host-specific.
-    const rootBundleTitle = getMapValue(rootDomainToBundleTitle, bundleInheritanceKey);
+    const rootRuleEntries = getMapValue(rootDomainToBundleRules, bundleInheritanceKey);
+    const rootDomainParsedUrl = normalizedParsedUrl && bundleInheritanceKey
+        ? new URL(`${normalizedParsedUrl.protocol}//${bundleInheritanceKey}${normalizedParsedUrl.pathname}`)
+        : null;
+    const rootBundleTitle = findMatchingBundleTitle(rootRuleEntries, rootDomainParsedUrl);
     if (rootBundleTitle) {
         return {
             hostname: normalizedHostname,

@@ -245,6 +245,7 @@ async function renderActiveTabStatus() {
     // Mirror the background worker's shared precedence so the popup explanation matches runtime grouping behavior.
     const grouping = resolveGroupingForHostname({
         hostname: parsedUrl.hostname,
+        parsedUrl,
         commonMultipartSuffixes,
         excludedFromRootCollapse,
         customBundleMaps: buildCustomBundleMaps(settings.customDomainGroups),
