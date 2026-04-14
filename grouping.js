@@ -138,46 +138,42 @@ export function matchesParsedUrlAgainstRule(parsedUrl, rule) {
     return pathname.startsWith(`${rule.pathPrefix}/`);
 }
 
-function findMatchingBundleTitle(ruleEntries, parsedUrl) {
+function findWinningBundleRule(ruleEntries, parsedUrl) {
     if (!Array.isArray(ruleEntries) || ruleEntries.length === 0) return null;
 
-    // Precedence:
-    // 1) host+path rules by most-specific path length
-    // 2) host-only rules
-    // For equal specificity we keep latest rule wins behavior.
     const candidates = [];
     for (let idx = 0; idx < ruleEntries.length; idx += 1) {
         const entry = ruleEntries[idx];
-        if (!matchesParsedUrlAgainstRule(parsedUrl, entry.rule)) continue;
+        const rule = entry?.rule;
+        if (!matchesParsedUrlAgainstRule(parsedUrl, rule)) continue;
 
-        const pathLen = entry.rule?.pathPrefix ? entry.rule.pathPrefix.length : -1;
-        candidates.push({ idx, title: entry.title, pathLen });
+        candidates.push({
+            idx,
+            title: entry.title,
+            hostnameLen: rule.hostname.length,
+            hasPathRule: Boolean(rule.pathPrefix),
+            pathLen: rule.pathPrefix ? rule.pathPrefix.length : -1,
+            rule,
+        });
     }
 
     if (candidates.length === 0) return null;
 
     candidates.sort((a, b) => {
+        // Precedence for overlapping custom bundle matches:
+        // 1) Longer hostname specificity (exact-host map still compares equally here)
+        // 2) Path rule over host-only rule
+        //    Example: chatgpt.com vs chatgpt.com/codex -> /codex rule wins for /codex paths.
+        // 3) Longer pathPrefix among path rules
+        //    Example: chatgpt.com/codex vs chatgpt.com/codex/agents -> /codex/agents wins.
+        // 4) Stable declaration-order fallback (earlier declared rule wins ties)
+        if (a.hostnameLen !== b.hostnameLen) return b.hostnameLen - a.hostnameLen;
+        if (a.hasPathRule !== b.hasPathRule) return Number(b.hasPathRule) - Number(a.hasPathRule);
         if (a.pathLen !== b.pathLen) return b.pathLen - a.pathLen;
-        return b.idx - a.idx;
+        return a.idx - b.idx;
     });
 
-    return candidates[0].title;
-}
-
-function findMatchingHostOnlyBundleTitle(ruleEntries, hostname) {
-    if (!Array.isArray(ruleEntries) || ruleEntries.length === 0) return null;
-
-    const normalizedHostname = toLowerString(hostname);
-    if (!normalizedHostname) return null;
-
-    for (let idx = ruleEntries.length - 1; idx >= 0; idx -= 1) {
-        const entry = ruleEntries[idx];
-        const rule = entry?.rule;
-        if (!rule?.hostname || rule.pathPrefix) continue;
-        if (rule.hostname === normalizedHostname) return entry.title;
-    }
-
-    return null;
+    return candidates[0];
 }
 
 export function getRootDomain(hostname, commonMultipartSuffixes) {
@@ -284,34 +280,42 @@ export function resolveGroupingForHostname({
 
     // An exact bundle match is the most specific result and wins before inherited root-domain bundles.
     const exactRuleEntries = getMapValue(exactHostnameToBundleRules, normalizedHostname);
-    const exactBundleTitle = findMatchingBundleTitle(exactRuleEntries, normalizedParsedUrl);
-    if (exactBundleTitle) {
+    const exactWinningRule = findWinningBundleRule(exactRuleEntries, normalizedParsedUrl);
+    if (exactWinningRule) {
         return {
             hostname: normalizedHostname,
             groupKey: normalizedHostname,
-            identity: `${prefix}${exactBundleTitle}`,
+            identity: `${prefix}${exactWinningRule.title}`,
             reason: "custom-bundle-grouping",
             matchedSuffix,
-            matchedExactHostname: normalizedHostname,
-            matchedCustomBundleTitle: exactBundleTitle,
-            displayGroupingLabel: exactBundleTitle,
+            matchedExactHostname: exactWinningRule.rule.hostname,
+            matchedCustomBundleTitle: exactWinningRule.title,
+            displayGroupingLabel: exactWinningRule.title,
         };
     }
 
     // If there is no exact bundle, inherit from the root-domain bundle even when default grouping stays host-specific.
-    // Inherited root-domain matching only considers host-only rules.
+    // Root-domain inheritance should evaluate rules as if the current URL were on the root hostname so
+    // host-only rules like "example.com" still match subdomains like "foo.example.com".
+    let rootInheritanceParsedUrl = normalizedParsedUrl;
+    if (normalizedParsedUrl && bundleInheritanceKey) {
+        rootInheritanceParsedUrl = new URL(normalizedParsedUrl.toString());
+        rootInheritanceParsedUrl.hostname = bundleInheritanceKey;
+    }
+
+    // Inherited root-domain matching still uses full precedence logic within root-domain rules.
     const rootRuleEntries = getMapValue(rootDomainToBundleRules, bundleInheritanceKey);
-    const rootBundleTitle = findMatchingHostOnlyBundleTitle(rootRuleEntries, bundleInheritanceKey);
-    if (rootBundleTitle) {
+    const rootWinningRule = findWinningBundleRule(rootRuleEntries, rootInheritanceParsedUrl);
+    if (rootWinningRule) {
         return {
             hostname: normalizedHostname,
             groupKey: bundleInheritanceKey,
-            identity: `${prefix}${rootBundleTitle}`,
+            identity: `${prefix}${rootWinningRule.title}`,
             reason: "custom-bundle-grouping",
             matchedSuffix,
-            matchedExactHostname: isExactHostSeparated ? normalizedHostname : null,
-            matchedCustomBundleTitle: rootBundleTitle,
-            displayGroupingLabel: rootBundleTitle,
+            matchedExactHostname: rootWinningRule.rule.hostname,
+            matchedCustomBundleTitle: rootWinningRule.title,
+            displayGroupingLabel: rootWinningRule.title,
         };
     }
 
