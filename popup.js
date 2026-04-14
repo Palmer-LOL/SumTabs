@@ -27,15 +27,12 @@ function normalizeLowerArray(values) {
     return [...normalizeLowerList(values)];
 }
 
-function isSupportedTabUrl(tabUrl) {
-    if (!tabUrl) return false;
+function safeParseUrl(urlString) {
+    try { return new URL(urlString); } catch { return null; }
+}
 
-    try {
-        const parsedUrl = new URL(tabUrl);
-        return parsedUrl.protocol === "http:" || parsedUrl.protocol === "https:";
-    } catch {
-        return false;
-    }
+function isWebUrl(u) {
+    return u && (u.protocol === "http:" || u.protocol === "https:");
 }
 
 function getGroupingTargetLabel(grouping) {
@@ -228,7 +225,8 @@ async function renderActiveTabStatus() {
         return;
     }
 
-    if (!isSupportedTabUrl(activeTab.url)) {
+    const parsedUrl = safeParseUrl(activeTab.url);
+    if (!isWebUrl(parsedUrl)) {
         setStatus({
             hostname: "Unsupported page",
             target: "Not grouped",
@@ -238,14 +236,14 @@ async function renderActiveTabStatus() {
         return;
     }
 
-    const parsedUrl = new URL(activeTab.url);
     const settings = await chrome.storage.sync.get(DEFAULTS);
     const commonMultipartSuffixes = normalizeLowerList(settings.commonMultipartSuffixes);
     const excludedFromRootCollapse = normalizeLowerList(settings.excludedFromRootCollapse);
     // Mirror the background worker's shared precedence so the popup explanation matches runtime grouping behavior.
     const grouping = resolveGroupingForHostname({
+        url: parsedUrl.href,
         hostname: parsedUrl.hostname,
-        parsedUrl,
+        pathname: parsedUrl.pathname,
         commonMultipartSuffixes,
         excludedFromRootCollapse,
         customBundleMaps: buildCustomBundleMaps(settings.customDomainGroups),

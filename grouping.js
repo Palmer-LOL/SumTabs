@@ -141,9 +141,40 @@ export function matchesParsedUrlAgainstRule(parsedUrl, rule) {
 function findMatchingBundleTitle(ruleEntries, parsedUrl) {
     if (!Array.isArray(ruleEntries) || ruleEntries.length === 0) return null;
 
+    // Precedence:
+    // 1) host+path rules by most-specific path length
+    // 2) host-only rules
+    // For equal specificity we keep latest rule wins behavior.
+    const candidates = [];
+    for (let idx = 0; idx < ruleEntries.length; idx += 1) {
+        const entry = ruleEntries[idx];
+        if (!matchesParsedUrlAgainstRule(parsedUrl, entry.rule)) continue;
+
+        const pathLen = entry.rule?.pathPrefix ? entry.rule.pathPrefix.length : -1;
+        candidates.push({ idx, title: entry.title, pathLen });
+    }
+
+    if (candidates.length === 0) return null;
+
+    candidates.sort((a, b) => {
+        if (a.pathLen !== b.pathLen) return b.pathLen - a.pathLen;
+        return b.idx - a.idx;
+    });
+
+    return candidates[0].title;
+}
+
+function findMatchingHostOnlyBundleTitle(ruleEntries, hostname) {
+    if (!Array.isArray(ruleEntries) || ruleEntries.length === 0) return null;
+
+    const normalizedHostname = toLowerString(hostname);
+    if (!normalizedHostname) return null;
+
     for (let idx = ruleEntries.length - 1; idx >= 0; idx -= 1) {
         const entry = ruleEntries[idx];
-        if (matchesParsedUrlAgainstRule(parsedUrl, entry.rule)) return entry.title;
+        const rule = entry?.rule;
+        if (!rule?.hostname || rule.pathPrefix) continue;
+        if (rule.hostname === normalizedHostname) return entry.title;
     }
 
     return null;
@@ -215,7 +246,9 @@ export function getDomainWideSeparationRule(hostname, commonMultipartSuffixes) {
 }
 
 export function resolveGroupingForHostname({
+    url,
     hostname,
+    pathname,
     parsedUrl,
     commonMultipartSuffixes,
     excludedFromRootCollapse,
@@ -225,9 +258,16 @@ export function resolveGroupingForHostname({
     const normalizedHostname = toLowerString(hostname);
     const prefix = String(managedPrefix ?? "");
     const { rootDomain, matchedSuffix } = getRootDomain(normalizedHostname, commonMultipartSuffixes);
-    const normalizedParsedUrl = parsedUrl instanceof URL
-        ? parsedUrl
-        : (normalizedHostname ? new URL(`https://${normalizedHostname}/`) : null);
+    let normalizedParsedUrl = parsedUrl instanceof URL ? parsedUrl : null;
+    if (!normalizedParsedUrl && typeof url === "string" && url.trim()) {
+        try {
+            normalizedParsedUrl = new URL(url);
+        } catch {}
+    }
+    if (!normalizedParsedUrl && normalizedHostname) {
+        const normalizedPathname = normalizePathPrefix(pathname || "/");
+        normalizedParsedUrl = new URL(`https://${normalizedHostname}${normalizedPathname}`);
+    }
 
     const excludedHostnames = excludedFromRootCollapse instanceof Set
         ? excludedFromRootCollapse
@@ -259,11 +299,9 @@ export function resolveGroupingForHostname({
     }
 
     // If there is no exact bundle, inherit from the root-domain bundle even when default grouping stays host-specific.
+    // Inherited root-domain matching only considers host-only rules.
     const rootRuleEntries = getMapValue(rootDomainToBundleRules, bundleInheritanceKey);
-    const rootDomainParsedUrl = normalizedParsedUrl && bundleInheritanceKey
-        ? new URL(`${normalizedParsedUrl.protocol}//${bundleInheritanceKey}${normalizedParsedUrl.pathname}`)
-        : null;
-    const rootBundleTitle = findMatchingBundleTitle(rootRuleEntries, rootDomainParsedUrl);
+    const rootBundleTitle = findMatchingHostOnlyBundleTitle(rootRuleEntries, bundleInheritanceKey);
     if (rootBundleTitle) {
         return {
             hostname: normalizedHostname,
