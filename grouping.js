@@ -17,20 +17,97 @@ function getMapValue(mapLike, key) {
     return value == null ? null : value;
 }
 
-export function buildCustomBundleMaps(customDomainGroups) {
-    const exactHostnameToBundleTitle = new Map();
-    const rootDomainToBundleTitle = new Map();
+function normalizePathPrefix(pathLike) {
+    let path = `/${String(pathLike ?? "")}`;
+    path = path.replace(/\/+/g, "/");
+
+    if (path.endsWith("/*")) {
+        path = path.slice(0, -2) || "/";
+    }
+
+    while (path.length > 1 && path.endsWith("/")) {
+        path = path.slice(0, -1);
+    }
+
+    return path;
+}
+
+export function parseCustomDomainRule(domainEntry) {
+    const raw = String(domainEntry ?? "").trim();
+    const result = {
+        raw,
+        hostname: "",
+        pathPrefix: null,
+        matchMode: "host_only",
+        valid: false,
+        error: null,
+    };
+
+    if (!raw) {
+        result.error = "Domain entry is empty.";
+        return result;
+    }
+
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) {
+        result.error = "Protocols are not allowed.";
+        return result;
+    }
+
+    const slashIndex = raw.indexOf("/");
+    const hostnamePart = slashIndex === -1 ? raw : raw.slice(0, slashIndex);
+    const normalizedHostname = toLowerString(hostnamePart);
+
+    if (!normalizedHostname) {
+        result.error = "Hostname is required.";
+        return result;
+    }
+
+    result.hostname = normalizedHostname;
+
+    if (slashIndex === -1) {
+        result.valid = true;
+        return result;
+    }
+
+    const rawPath = raw.slice(slashIndex + 1);
+    const normalizedPathPrefix = normalizePathPrefix(rawPath);
+
+    if (normalizedPathPrefix && normalizedPathPrefix !== "/") {
+        result.pathPrefix = normalizedPathPrefix;
+        result.matchMode = "host_path_prefix";
+    }
+
+    result.valid = true;
+    return result;
+}
+
+export function parseCustomDomainGroups(customDomainGroups) {
+    const parsedGroups = [];
 
     for (const group of customDomainGroups ?? []) {
         const title = String(group?.title ?? "").trim();
         if (!title || !Array.isArray(group?.domains)) continue;
 
-        for (const domain of group.domains) {
-            const normalizedDomain = toLowerString(domain);
-            if (!normalizedDomain) continue;
+        const parsedRules = group.domains.map((domain) => parseCustomDomainRule(domain));
+        parsedGroups.push({
+            title,
+            parsedRules,
+        });
+    }
 
-            exactHostnameToBundleTitle.set(normalizedDomain, title);
-            rootDomainToBundleTitle.set(normalizedDomain, title);
+    return parsedGroups;
+}
+
+export function buildCustomBundleMaps(customDomainGroups) {
+    const exactHostnameToBundleTitle = new Map();
+    const rootDomainToBundleTitle = new Map();
+
+    for (const group of parseCustomDomainGroups(customDomainGroups)) {
+        for (const rule of group.parsedRules) {
+            if (!rule.valid) continue;
+
+            exactHostnameToBundleTitle.set(rule.hostname, group.title);
+            rootDomainToBundleTitle.set(rule.hostname, group.title);
         }
     }
 
