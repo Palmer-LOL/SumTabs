@@ -14,7 +14,7 @@ The extension runs entirely in the browser — no network calls, no analytics �
   New tabs are grouped based on the registrable portion of their hostname (e.g. `docs.google.com` and `mail.google.com` fall under `google.com`). IPv4 addresses and multipart TLDs are handled correctly. Group titles are prefixed with `∑ `.
 
 - **Configurable grouping threshold.**  
-  Choose how many matching tabs must exist in the same window before SumTabs creates a group. The default is `2`.
+  Choose how many matching tabs must exist in the same window before SumTabs creates a new managed group. The default is `2`.
 
 - **Strict membership enforcement.**  
   When a tab changes URL, SumTabs verifies that it still belongs in its current group. If the hostname no longer matches the group identity, the tab is ungrouped and reassigned if appropriate.
