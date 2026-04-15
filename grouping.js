@@ -70,7 +70,7 @@ export function parseCustomDomainRule(domainEntry) {
     }
 
     const rawPath = raw.slice(slashIndex + 1);
-    const normalizedPathPrefix = normalizePathPrefix(rawPath);
+    const normalizedPathPrefix = normalizePathPrefix(rawPath).toLowerCase();
 
     if (normalizedPathPrefix && normalizedPathPrefix !== "/") {
         result.pathPrefix = normalizedPathPrefix;
@@ -124,6 +124,7 @@ export function buildCustomBundleMaps(customDomainGroups) {
 // 2) If rule.pathPrefix exists, match only when pathname is exactly rule.pathPrefix
 //    or starts with `${rule.pathPrefix}/` (so `/codexx` does not match `/codex`).
 // 3) Matching uses URL.pathname only; query string and hash are ignored by design.
+// 4) Path-prefix matching is case-insensitive for consistency with canonicalized rule input.
 export function matchesParsedUrlAgainstRule(parsedUrl, rule) {
     if (!parsedUrl || !rule?.hostname) return false;
 
@@ -132,7 +133,7 @@ export function matchesParsedUrlAgainstRule(parsedUrl, rule) {
 
     if (!rule.pathPrefix) return true;
 
-    const pathname = normalizePathPrefix(parsedUrl.pathname || "/");
+    const pathname = normalizePathPrefix(parsedUrl.pathname || "/").toLowerCase();
     if (pathname === rule.pathPrefix) return true;
 
     return pathname.startsWith(`${rule.pathPrefix}/`);
