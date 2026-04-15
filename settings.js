@@ -2,6 +2,7 @@ import { DEFAULTS } from "./defaults.js";
 import { parseCustomDomainRule } from "./grouping.js";
 
 const $ = (id) => document.getElementById(id);
+const MIN_GROUPING_THRESHOLD = 2;
 
 let customGroupsState = [];
 let selectedGroupIndex = 0;
@@ -93,6 +94,12 @@ function setStatus(msg, ok = true) {
     el.textContent = msg;
     el.style.color = ok ? "green" : "crimson";
     setTimeout(() => { el.textContent = ""; }, 2500);
+}
+
+function normalizeMinTabsToGroup(value) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return DEFAULTS.minTabsToGroup;
+    return Math.max(MIN_GROUPING_THRESHOLD, Math.floor(parsed));
 }
 
 function setDomainsValidation(invalidEntries) {
@@ -226,6 +233,7 @@ function syncAdvancedJsonFromUi() {
 
 async function load() {
     const stored = await chrome.storage.sync.get(DEFAULTS);
+    $("minTabsToGroup").value = String(normalizeMinTabsToGroup(stored.minTabsToGroup));
     $("collapseOtherGroupsOnNavEvents").checked = !!stored.collapseOtherGroupsOnNavEvents;
     // Default (false): keep singleton managed groups grouped. Enabled (true): ungroup them.
     $("ungroupSingletonManagedGroups").checked = !!stored.ungroupSingletonManagedGroups;
@@ -256,8 +264,11 @@ async function load() {
 
 async function save() {
     const customGroups = readGroupsFromUi();
+    const minTabsToGroup = normalizeMinTabsToGroup($("minTabsToGroup").value);
+    $("minTabsToGroup").value = String(minTabsToGroup);
 
     const payload = {
+        minTabsToGroup,
         collapseOtherGroupsOnNavEvents: $("collapseOtherGroupsOnNavEvents").checked,
         // Persist singleton managed-group policy exactly as represented in the settings checkbox.
         ungroupSingletonManagedGroups: $("ungroupSingletonManagedGroups").checked,

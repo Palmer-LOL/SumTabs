@@ -9,6 +9,12 @@
   <h1>SumTabs Settings</h1>
 
   <div class="settings__row">
+    <label class="settings__field-label" for="minTabsToGroup">Group when at least this many matching tabs exist</label>
+    <input class="input-text" id="minTabsToGroup" type="number" min="2" step="1">
+    <div class="settings__small-text">Minimum is 2. Higher values delay grouping until more matching tabs are open in the same window.</div>
+  </div>
+
+  <div class="settings__row">
     <label class="settings__field-label checkbox-field">
       <input class="checkbox-field__input" id="collapseOtherGroupsOnNavEvents" type="checkbox">
       Collapse other groups when navigating/creating tabs
