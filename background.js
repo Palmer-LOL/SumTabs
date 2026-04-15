@@ -11,6 +11,7 @@ let settings = structuredClone(DEFAULTS);
 let COMMON_MULTIPART_SUFFIXES = new Set(DEFAULTS.commonMultipartSuffixes);
 let EXCLUDED_FROM_ROOT_COLLAPSE = new Set(DEFAULTS.excludedFromRootCollapse);
 let AUTO_GROUP_PREFIX = DEFAULTS.autoGroupPrefix;
+let MIN_TABS_TO_GROUP = DEFAULTS.minTabsToGroup;
 let COLLAPSE_OTHER_GROUPS_ON_NAV_EVENTS = DEFAULTS.collapseOtherGroupsOnNavEvents;
 let UNGROUP_SINGLETON_MANAGED_GROUPS = DEFAULTS.ungroupSingletonManagedGroups;
 let IGNORE_INITIAL_TAB_URL_FOR_GROUPING = DEFAULTS.ignoreInitialTabUrlForGrouping;
@@ -22,9 +23,18 @@ let customBundleMaps = {
 };
 let customIdentityToColor = new Map();
 const VALID_GROUP_COLORS = new Set(["grey", "blue", "red", "yellow", "green", "pink", "purple", "cyan", "orange"]);
+const MIN_TABS_TO_GROUP_LOWER_BOUND = 2;
+const MIN_TABS_TO_GROUP_UPPER_BOUND = 100;
+
+function sanitizeMinTabsToGroup(value) {
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isFinite(parsed)) return DEFAULTS.minTabsToGroup;
+    return Math.min(MIN_TABS_TO_GROUP_UPPER_BOUND, Math.max(MIN_TABS_TO_GROUP_LOWER_BOUND, parsed));
+}
 
 function rebuildDerived() {
     AUTO_GROUP_PREFIX = settings.autoGroupPrefix ?? DEFAULTS.autoGroupPrefix;
+    MIN_TABS_TO_GROUP = sanitizeMinTabsToGroup(settings.minTabsToGroup);
     COLLAPSE_OTHER_GROUPS_ON_NAV_EVENTS = !!settings.collapseOtherGroupsOnNavEvents;
     UNGROUP_SINGLETON_MANAGED_GROUPS = !!settings.ungroupSingletonManagedGroups;
     IGNORE_INITIAL_TAB_URL_FOR_GROUPING = !!settings.ignoreInitialTabUrlForGrouping;
