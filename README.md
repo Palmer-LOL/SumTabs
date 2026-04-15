@@ -13,6 +13,9 @@ The extension runs entirely in the browser — no network calls, no analytics �
 - **Automatic grouping by root domain.**  
   New tabs are grouped based on the registrable portion of their hostname (e.g. `docs.google.com` and `mail.google.com` fall under `google.com`). IPv4 addresses and multipart TLDs are handled correctly. Group titles are prefixed with `∑ `.
 
+- **Configurable grouping threshold.**  
+  Choose how many matching tabs must exist in the same window before SumTabs creates a group. The default is `2`.
+
 - **Strict membership enforcement.**  
   When a tab changes URL, SumTabs verifies that it still belongs in its current group. If the hostname no longer matches the group identity, the tab is ungrouped and reassigned if appropriate.
 
@@ -79,6 +82,7 @@ To configure behavior:
 
 - Open the extension popup and click **Open Settings**.
 - Toggle **Collapse other groups when navigating/creating tabs** to enable or disable focus mode.
+- Set **Group when at least this many matching tabs exist** to control when grouping starts (minimum `2`, default `2`).
 - Toggle **Ungroup managed groups when only one tab remains** to remove singleton managed groups automatically (default is off, so singleton managed groups remain grouped).
 - Toggle **Ignore initial tab URL for grouping** and **Ignore initial tab URL for enforcement** to avoid grouping while tabs are still on their initial load.
 - Add entries under **Domain-wide subdomain separation rules** (one per line) to keep matching subdomain families separate when needed.
