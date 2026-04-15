@@ -400,8 +400,8 @@ async function maybeGroupTab(tab, currentGrouping) {
 
     const matches = await getMatchingTabs(tab.windowId, groupIdentity);
 
-    // Only group if 2+ matching tabs exist
-    if (matches.length < 2) return;
+    // Only group when enough matching tabs exist for the configured threshold.
+    if (matches.length < MIN_TABS_TO_GROUP) return;
 
     const existingGroupId = await findExistingGroupIdForIdentity(matches, groupIdentity);
     const desiredColor = customIdentityToColor.get(groupIdentity);
