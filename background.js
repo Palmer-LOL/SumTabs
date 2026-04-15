@@ -11,6 +11,7 @@ let settings = structuredClone(DEFAULTS);
 let COMMON_MULTIPART_SUFFIXES = new Set(DEFAULTS.commonMultipartSuffixes);
 let EXCLUDED_FROM_ROOT_COLLAPSE = new Set(DEFAULTS.excludedFromRootCollapse);
 let AUTO_GROUP_PREFIX = DEFAULTS.autoGroupPrefix;
+let MIN_TABS_TO_GROUP = DEFAULTS.minTabsToGroup;
 let COLLAPSE_OTHER_GROUPS_ON_NAV_EVENTS = DEFAULTS.collapseOtherGroupsOnNavEvents;
 let UNGROUP_SINGLETON_MANAGED_GROUPS = DEFAULTS.ungroupSingletonManagedGroups;
 let IGNORE_INITIAL_TAB_URL_FOR_GROUPING = DEFAULTS.ignoreInitialTabUrlForGrouping;
@@ -25,6 +26,10 @@ const VALID_GROUP_COLORS = new Set(["grey", "blue", "red", "yellow", "green", "p
 
 function rebuildDerived() {
     AUTO_GROUP_PREFIX = settings.autoGroupPrefix ?? DEFAULTS.autoGroupPrefix;
+    const rawMinTabsToGroup = Number(settings.minTabsToGroup);
+    MIN_TABS_TO_GROUP = Number.isFinite(rawMinTabsToGroup)
+        ? Math.max(2, Math.floor(rawMinTabsToGroup))
+        : DEFAULTS.minTabsToGroup;
     COLLAPSE_OTHER_GROUPS_ON_NAV_EVENTS = !!settings.collapseOtherGroupsOnNavEvents;
     UNGROUP_SINGLETON_MANAGED_GROUPS = !!settings.ungroupSingletonManagedGroups;
     IGNORE_INITIAL_TAB_URL_FOR_GROUPING = !!settings.ignoreInitialTabUrlForGrouping;
@@ -389,10 +394,6 @@ async function maybeGroupTab(tab, currentGrouping) {
     await enforceGroupMembershipForTab(tab, currentGrouping);
 
     const matches = await getMatchingTabs(tab.windowId, groupIdentity);
-
-    // Only group if 2+ matching tabs exist
-    if (matches.length < 2) return;
-
     const existingGroupId = await findExistingGroupIdForIdentity(matches, groupIdentity);
     const desiredColor = customIdentityToColor.get(groupIdentity);
 
@@ -409,6 +410,10 @@ async function maybeGroupTab(tab, currentGrouping) {
         } catch {}
         return;
     }
+
+    // Only create a new group when at least the configured minimum number of matching tabs exist.
+    // If a managed group already exists for this identity, tabs may still join it even when below threshold.
+    if (matches.length < MIN_TABS_TO_GROUP) return;
 
     // Create new group containing all matching tabs
     const tabIds = matches.map(t => t.id).filter(id => id != null);
