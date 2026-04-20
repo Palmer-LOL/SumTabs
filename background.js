@@ -13,6 +13,7 @@ let EXCLUDED_FROM_ROOT_COLLAPSE = new Set(DEFAULTS.excludedFromRootCollapse);
 let AUTO_GROUP_PREFIX = DEFAULTS.autoGroupPrefix;
 let MIN_TABS_TO_GROUP = DEFAULTS.minTabsToGroup;
 let COLLAPSE_OTHER_GROUPS_ON_NAV_EVENTS = DEFAULTS.collapseOtherGroupsOnNavEvents;
+let MOVE_MANAGED_GROUPS_TO_FRONT = DEFAULTS.moveManagedGroupsToFront;
 let UNGROUP_SINGLETON_MANAGED_GROUPS = DEFAULTS.ungroupSingletonManagedGroups;
 let IGNORE_INITIAL_TAB_URL_FOR_GROUPING = DEFAULTS.ignoreInitialTabUrlForGrouping;
 let IGNORE_INITIAL_TAB_URL_FOR_ENFORCEMENT = DEFAULTS.ignoreInitialTabUrlForEnforcement;
@@ -31,6 +32,7 @@ function rebuildDerived() {
         ? Math.max(2, Math.floor(rawMinTabsToGroup))
         : DEFAULTS.minTabsToGroup;
     COLLAPSE_OTHER_GROUPS_ON_NAV_EVENTS = !!settings.collapseOtherGroupsOnNavEvents;
+    MOVE_MANAGED_GROUPS_TO_FRONT = !!settings.moveManagedGroupsToFront;
     UNGROUP_SINGLETON_MANAGED_GROUPS = !!settings.ungroupSingletonManagedGroups;
     IGNORE_INITIAL_TAB_URL_FOR_GROUPING = !!settings.ignoreInitialTabUrlForGrouping;
     IGNORE_INITIAL_TAB_URL_FOR_ENFORCEMENT = !!settings.ignoreInitialTabUrlForEnforcement;
