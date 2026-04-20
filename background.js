@@ -319,12 +319,13 @@ async function findExistingGroupIdForIdentity(matches, groupIdentity) {
 }
 
 async function cleanupManagedSingletonGroupsInWindow(windowId) {
-    if (windowId == null) return;
+    if (windowId == null) return false;
 
     // false/default => keep singleton grouped; true => ungroup singleton managed group.
-    if (!UNGROUP_SINGLETON_MANAGED_GROUPS) return;
+    if (!UNGROUP_SINGLETON_MANAGED_GROUPS) return false;
 
     try {
+        let didUngroupAny = false;
         const tabs = await chrome.tabs.query({ windowId });
         const tabsByGroupId = new Map();
 
@@ -346,6 +347,81 @@ async function cleanupManagedSingletonGroupsInWindow(windowId) {
             if (!singletonTab?.id || singletonTab.pinned) continue;
 
             await ungroupTab(singletonTab.id);
+            didUngroupAny = true;
+        }
+        return didUngroupAny;
+    } catch {}
+    return false;
+}
+
+async function rebalanceManagedGroupsToFront(windowId, preferredGroupId = null) {
+    if (!MOVE_MANAGED_GROUPS_TO_FRONT) return;
+    if (windowId == null) return;
+
+    try {
+        const tabs = await chrome.tabs.query({ windowId });
+        const tabsInIndexOrder = [...tabs].sort((a, b) => a.index - b.index);
+        const pinnedCount = tabsInIndexOrder.filter((tab) => tab?.pinned === true).length;
+
+        const candidateGroupIds = new Set();
+        for (const tab of tabsInIndexOrder) {
+            const gid = tab?.groupId;
+            if (tab?.pinned) continue;
+            if (gid == null || gid === NONE) continue;
+            candidateGroupIds.add(gid);
+        }
+        if (candidateGroupIds.size === 0) return;
+
+        const managedGroupIds = new Set();
+        for (const gid of candidateGroupIds) {
+            const title = await getGroupTitle(gid);
+            if (isManagedGroupTitle(title)) managedGroupIds.add(gid);
+        }
+        if (managedGroupIds.size === 0) return;
+
+        const tabsByManagedGroup = new Map();
+        for (const tab of tabsInIndexOrder) {
+            const gid = tab?.groupId;
+            if (!tab?.id || tab?.pinned) continue;
+            if (!managedGroupIds.has(gid)) continue;
+
+            if (!tabsByManagedGroup.has(gid)) {
+                tabsByManagedGroup.set(gid, { groupId: gid, minIndex: tab.index, tabIds: [] });
+            }
+
+            const bucket = tabsByManagedGroup.get(gid);
+            bucket.tabIds.push(tab.id);
+        }
+        if (tabsByManagedGroup.size === 0) return;
+
+        const orderedGroups = [];
+        if (preferredGroupId != null && tabsByManagedGroup.has(preferredGroupId)) {
+            orderedGroups.push(tabsByManagedGroup.get(preferredGroupId));
+        }
+
+        const remainingGroups = [...tabsByManagedGroup.values()]
+            .filter((group) => group.groupId !== preferredGroupId)
+            .sort((a, b) => a.minIndex - b.minIndex);
+
+        orderedGroups.push(...remainingGroups);
+
+        const desiredFrontTabIds = orderedGroups.flatMap((group) => group.tabIds);
+        const currentUnpinnedTabIds = tabsInIndexOrder
+            .filter((tab) => tab?.id != null && tab.pinned !== true)
+            .map((tab) => tab.id);
+        const currentFrontSegment = currentUnpinnedTabIds.slice(0, desiredFrontTabIds.length);
+
+        const alreadyPackedToFront =
+            currentFrontSegment.length === desiredFrontTabIds.length &&
+            currentFrontSegment.every((tabId, idx) => tabId === desiredFrontTabIds[idx]);
+        if (alreadyPackedToFront) return;
+
+        let targetIndex = pinnedCount;
+        for (const group of orderedGroups) {
+            if (!group.tabIds.length) continue;
+            acquireMutationLock(400);
+            await chrome.tabs.move(group.tabIds, { index: targetIndex });
+            targetIndex += group.tabIds.length;
         }
     } catch {}
 }
@@ -409,6 +485,7 @@ async function maybeGroupTab(tab, currentGrouping) {
             const didRenameGroup = await ensureGroupTitle(existingGroupId, groupIdentity);
             await ensureGroupColor(existingGroupId, desiredColor);
             await expandGroupIfCollapsed(existingGroupId);
+            await rebalanceManagedGroupsToFront(tab.windowId, existingGroupId);
             if (didRenameGroup) {
                 await runChromiumGroupTitleRenderWorkaround(tab.windowId);
             }
@@ -426,6 +503,7 @@ async function maybeGroupTab(tab, currentGrouping) {
         await ensureGroupTitle(newGroupId, groupIdentity);
         await ensureGroupColor(newGroupId, desiredColor);
         await expandGroupIfCollapsed(newGroupId);
+        await rebalanceManagedGroupsToFront(tab.windowId, newGroupId);
         await runChromiumGroupTitleRenderWorkaround(tab.windowId);
     } catch {}
 }
@@ -514,6 +592,8 @@ async function forceReevaluateAllWindows() {
             const grouping = resolveTabGrouping(tab);
             await enforceGroupMembershipForTab(tab, grouping);
         }
+
+        await rebalanceManagedGroupsToFront(windowId);
     }
 }
 
@@ -590,7 +670,10 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 
         // Canonical semantics: this helper only ungroups singleton managed groups
         // when UNGROUP_SINGLETON_MANAGED_GROUPS is enabled.
-        await cleanupManagedSingletonGroupsInWindow(tab.windowId);
+        const didCleanupSingletons = await cleanupManagedSingletonGroupsInWindow(tab.windowId);
+        if (didCleanupSingletons) {
+            await rebalanceManagedGroupsToFront(tab.windowId);
+        }
 
         if (COLLAPSE_OTHER_GROUPS_ON_NAV_EVENTS) {
             const refreshed = await chrome.tabs.get(tabId);
@@ -614,7 +697,10 @@ chrome.tabs.onRemoved.addListener(async (_tabId, removeInfo) => {
 
         // Canonical semantics: this helper only ungroups singleton managed groups
         // when UNGROUP_SINGLETON_MANAGED_GROUPS is enabled.
-        await cleanupManagedSingletonGroupsInWindow(removeInfo.windowId);
+        const didCleanupSingletons = await cleanupManagedSingletonGroupsInWindow(removeInfo.windowId);
+        if (didCleanupSingletons) {
+            await rebalanceManagedGroupsToFront(removeInfo.windowId);
+        }
     } catch {}
 });
 
