@@ -634,7 +634,13 @@ chrome.tabGroups.onRemoved?.addListener((group) => {
     groupTitleCache.delete(group.id);
 });
 chrome.tabGroups.onUpdated?.addListener((group) => {
-    groupTitleCache.set(group.id, group.title ?? null);
+    if (group?.id == null) return;
+
+    // Collapse/expand updates can emit events without a title payload.
+    // Preserve the cached title unless this update explicitly includes one.
+    if (Object.prototype.hasOwnProperty.call(group, "title")) {
+        groupTitleCache.set(group.id, group.title ?? null);
+    }
 });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
