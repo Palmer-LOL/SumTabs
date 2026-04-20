@@ -235,6 +235,7 @@ async function load() {
     const stored = await chrome.storage.sync.get(DEFAULTS);
     $("minTabsToGroup").value = String(normalizeMinTabsToGroup(stored.minTabsToGroup));
     $("collapseOtherGroupsOnNavEvents").checked = !!stored.collapseOtherGroupsOnNavEvents;
+    $("moveManagedGroupsToFront").checked = !!stored.moveManagedGroupsToFront;
     // Default (false): keep singleton managed groups grouped. Enabled (true): ungroup them.
     $("ungroupSingletonManagedGroups").checked = !!stored.ungroupSingletonManagedGroups;
     $("ignoreInitialTabUrlForGrouping").checked = !!stored.ignoreInitialTabUrlForGrouping;
@@ -270,6 +271,7 @@ async function save() {
     const payload = {
         minTabsToGroup,
         collapseOtherGroupsOnNavEvents: $("collapseOtherGroupsOnNavEvents").checked,
+        moveManagedGroupsToFront: $("moveManagedGroupsToFront").checked,
         // Persist singleton managed-group policy exactly as represented in the settings checkbox.
         ungroupSingletonManagedGroups: $("ungroupSingletonManagedGroups").checked,
         ignoreInitialTabUrlForGrouping: $("ignoreInitialTabUrlForGrouping").checked,
