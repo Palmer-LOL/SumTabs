@@ -394,6 +394,9 @@ async function maybeGroupTab(tab, currentGrouping) {
     await enforceGroupMembershipForTab(tab, currentGrouping);
 
     const matches = await getMatchingTabs(tab.windowId, groupIdentity);
+    // Respect threshold for both creating new groups and attaching to existing managed groups.
+    if (matches.length < MIN_TABS_TO_GROUP) return;
+
     const existingGroupId = await findExistingGroupIdForIdentity(matches, groupIdentity);
     const desiredColor = customIdentityToColor.get(groupIdentity);
 
@@ -410,10 +413,6 @@ async function maybeGroupTab(tab, currentGrouping) {
         } catch {}
         return;
     }
-
-    // Only create a new group when at least the configured minimum number of matching tabs exist.
-    // If a managed group already exists for this identity, tabs may still join it even when below threshold.
-    if (matches.length < MIN_TABS_TO_GROUP) return;
 
     // Create new group containing all matching tabs
     const tabIds = matches.map(t => t.id).filter(id => id != null);
