@@ -253,7 +253,7 @@ The SumTabs appearance preference is explicitly exempt from the general `chrome.
 
 The single key `sumtabs.themePreference` MAY be stored in extension-origin `localStorage`, subject to all of the following constraints:
 
-- It may contain only `light` or `dark`; an absent key represents the default `system` preference.
+- It may contain only `system`, `light`, or `dark`; the implementation may represent `system` by removing the key entirely.
 - It controls presentation only and must never affect tab grouping, enforcement, domain rules, bundles, permissions, or other extension behavior.
 - No other setting or user data may be moved to `localStorage` under this exception.
 - All functional and grouping-related settings must continue to use `chrome.storage.sync`.
