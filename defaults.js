@@ -2,6 +2,7 @@ export const DEFAULTS = {
     autoGroupPrefix: "∑ ",
     minTabsToGroup: 2,
     collapseOtherGroupsOnNavEvents: true,
+    keepManagedGroupsAtFront: false,
     ungroupSingletonManagedGroups: false,
 
     ignoreInitialTabUrlForGrouping: true,
