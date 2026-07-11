@@ -552,10 +552,12 @@ async function handleActivation(tabId, windowId) {
     const currGroupId = (tab.groupId != null ? tab.groupId : NONE);
     const currOwnership = await classifyGroupOwnership(currGroupId, { fresh: true });
 
-    lastActiveGroupByWindow.set(windowId, currGroupId);
-
-    // Focus mode pauses while the user is working inside a user-created group.
+    // Focus mode pauses while the user is working inside a user-created group,
+    // but keep the previously active managed group tracked so it can still be
+    // collapsed when focus later moves to another managed group.
     if (currOwnership === GROUP_OWNERSHIP_PROTECTED) return;
+
+    lastActiveGroupByWindow.set(windowId, currGroupId);
 
     if (prevGroupId != null && prevGroupId !== NONE && prevGroupId !== currGroupId) {
         await setGroupCollapsed(prevGroupId, true);
