@@ -81,6 +81,68 @@ export function parseCustomDomainRule(domainEntry) {
     return result;
 }
 
+export function getCustomDomainBundleEntryOwners(customDomainGroups, domainEntry) {
+    const parsedTarget = parseCustomDomainRule(domainEntry);
+    if (!parsedTarget.valid) return [];
+
+    const targetEntry = parsedTarget.pathPrefix
+        ? `${parsedTarget.hostname}${parsedTarget.pathPrefix}`
+        : parsedTarget.hostname;
+    const owners = [];
+
+    (customDomainGroups ?? []).forEach((group, groupIndex) => {
+        if (!Array.isArray(group?.domains)) return;
+
+        group.domains.forEach((entry, domainIndex) => {
+            const parsedEntry = parseCustomDomainRule(entry);
+            if (!parsedEntry.valid) return;
+
+            const canonicalEntry = parsedEntry.pathPrefix
+                ? `${parsedEntry.hostname}${parsedEntry.pathPrefix}`
+                : parsedEntry.hostname;
+            if (canonicalEntry !== targetEntry) return;
+
+            owners.push({
+                groupIndex,
+                domainIndex,
+                title: String(group?.title ?? "").trim(),
+                entry: canonicalEntry,
+            });
+        });
+    });
+
+    return owners;
+}
+
+export function getCustomDomainBundleEntryConflicts(customDomainGroups) {
+    const ownersByEntry = new Map();
+
+    (customDomainGroups ?? []).forEach((group, groupIndex) => {
+        if (!Array.isArray(group?.domains)) return;
+
+        group.domains.forEach((entry, domainIndex) => {
+            const parsedEntry = parseCustomDomainRule(entry);
+            if (!parsedEntry.valid) return;
+
+            const canonicalEntry = parsedEntry.pathPrefix
+                ? `${parsedEntry.hostname}${parsedEntry.pathPrefix}`
+                : parsedEntry.hostname;
+            const owners = ownersByEntry.get(canonicalEntry) ?? [];
+            owners.push({
+                groupIndex,
+                domainIndex,
+                title: String(group?.title ?? "").trim(),
+                entry: canonicalEntry,
+            });
+            ownersByEntry.set(canonicalEntry, owners);
+        });
+    });
+
+    return [...ownersByEntry.entries()]
+        .filter(([, owners]) => owners.length > 1)
+        .map(([entry, owners]) => ({ entry, owners }));
+}
+
 export function parseCustomDomainGroups(customDomainGroups) {
     const parsedGroups = [];
 

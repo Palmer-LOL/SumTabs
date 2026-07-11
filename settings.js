@@ -1,5 +1,5 @@
 import { DEFAULTS } from "./defaults.js";
-import { parseCustomDomainRule } from "./grouping.js";
+import { getCustomDomainBundleEntryConflicts, parseCustomDomainRule } from "./grouping.js";
 
 const $ = (id) => document.getElementById(id);
 const MIN_GROUPING_THRESHOLD = 2;
@@ -102,9 +102,29 @@ function normalizeMinTabsToGroup(value) {
     return Math.max(MIN_GROUPING_THRESHOLD, Math.floor(parsed));
 }
 
+function getDuplicateDomainMessage(groups) {
+    const conflicts = getCustomDomainBundleEntryConflicts(groups);
+    if (!conflicts.length) return "";
+
+    const firstConflict = conflicts[0];
+    const titles = firstConflict.owners
+    .map((owner) => owner.title || `Untitled bundle ${owner.groupIndex + 1}`)
+    .join(", ");
+    const extraCount = conflicts.length - 1;
+    const extraMessage = extraCount > 0 ? ` (+${extraCount} more)` : "";
+    return `Duplicate bundle rule "${firstConflict.entry}" appears in: ${titles}${extraMessage}`;
+}
+
 function setDomainsValidation(invalidEntries) {
     const el = $("groupDomainsValidation");
     if (!el) return;
+
+    const duplicateMessage = getDuplicateDomainMessage(readGroupsSnapshotFromState());
+    if (duplicateMessage) {
+        el.textContent = duplicateMessage;
+        el.style.color = "#b45309";
+        return;
+    }
 
     if (!invalidEntries.length) {
         el.textContent = "All entries are valid.";
@@ -115,7 +135,7 @@ function setDomainsValidation(invalidEntries) {
     const firstInvalid = invalidEntries[0];
     const extraCount = invalidEntries.length - 1;
     const extraMessage = extraCount > 0 ? ` (+${extraCount} more)` : "";
-    el.textContent = `Ignoring malformed rule: \"${firstInvalid.raw}\" (${firstInvalid.error})${extraMessage}`;
+    el.textContent = `Ignoring malformed rule: "${firstInvalid.raw}" (${firstInvalid.error})${extraMessage}`;
     el.style.color = "#b45309";
 }
 
@@ -204,9 +224,7 @@ function setGroupsState(groups, preferredIndex = 0) {
     renderGroupSelect();
 }
 
-function readGroupsFromUi() {
-    updateSelectedGroupFromInputs();
-
+function readGroupsSnapshotFromState() {
     return customGroupsState
     .map((group) => {
         const title = String(group?.title ?? "").trim();
@@ -222,6 +240,12 @@ function readGroupsFromUi() {
         };
     })
     .filter(Boolean);
+}
+
+function readGroupsFromUi() {
+    updateSelectedGroupFromInputs();
+
+    return readGroupsSnapshotFromState();
 }
 
 function syncAdvancedJsonFromUi() {
@@ -265,6 +289,13 @@ async function load() {
 
 async function save() {
     const customGroups = readGroupsFromUi();
+    const duplicateMessage = getDuplicateDomainMessage(customGroups);
+    if (duplicateMessage) {
+        setStatus(duplicateMessage, false);
+        setDomainsValidation([]);
+        return;
+    }
+
     const minTabsToGroup = normalizeMinTabsToGroup($("minTabsToGroup").value);
     $("minTabsToGroup").value = String(minTabsToGroup);
 

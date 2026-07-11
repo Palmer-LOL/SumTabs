@@ -1,5 +1,5 @@
 import { DEFAULTS } from "./defaults.js";
-import { buildCustomBundleMaps, getDomainWideSeparationRule, resolveGroupingForHostname } from "./grouping.js";
+import { buildCustomBundleMaps, getCustomDomainBundleEntryOwners, getDomainWideSeparationRule, resolveGroupingForHostname } from "./grouping.js";
 
 const activeHostnameEl = document.getElementById("activeHostname");
 const groupingTargetEl = document.getElementById("groupingTarget");
@@ -13,11 +13,20 @@ const domainActionRowEl = document.getElementById("domainActionRow");
 const domainActionLabelEl = document.getElementById("domainActionLabel");
 const domainActionStatusEl = document.getElementById("domainActionStatus");
 const toggleDomainActionButton = document.getElementById("toggleDomainAction");
+const bundleActionRowEl = document.getElementById("bundleActionRow");
+const bundleSelectEl = document.getElementById("bundleSelect");
+const bundleActionStatusEl = document.getElementById("bundleActionStatus");
+const applyBundleActionButton = document.getElementById("applyBundleAction");
+const removeBundleActionButton = document.getElementById("removeBundleAction");
 const closeAllInWindowButton = document.getElementById("closeAllInWindow");
 const forceReevaluateButton = document.getElementById("forceReevaluate");
 
 let quickActionContext = null;
 let quickActionInFlight = false;
+
+function normalizeBundleTitle(group, index) {
+    return String(group?.title ?? "").trim() || `Untitled bundle ${index + 1}`;
+}
 
 function normalizeLowerList(values) {
     return new Set(Array.from(values ?? []).map((value) => String(value ?? "").trim().toLowerCase()).filter(Boolean));
@@ -94,6 +103,7 @@ function renderQuickActions(context) {
         quickActionsCardEl.hidden = true;
         exactActionRowEl.hidden = true;
         domainActionRowEl.hidden = true;
+        bundleActionRowEl.hidden = true;
         return;
     }
 
@@ -129,6 +139,54 @@ function renderQuickActions(context) {
         buttonText: context.domainActionEnabled ? "Remove rule" : "Add rule",
         hidden: !context.domainActionAvailable,
     });
+
+    renderBundleAction(context);
+}
+
+function renderBundleAction(context) {
+    bundleActionRowEl.hidden = false;
+    bundleSelectEl.innerHTML = "";
+
+    const bundles = context.customDomainGroups;
+    bundles.forEach((group, index) => {
+        const option = document.createElement("option");
+        option.value = String(index);
+        option.textContent = normalizeBundleTitle(group, index);
+        bundleSelectEl.appendChild(option);
+    });
+
+    const hasBundles = bundles.length > 0;
+    bundleSelectEl.disabled = !hasBundles || quickActionInFlight;
+    updateBundleSelectionStatus();
+}
+
+function getBundleOwnershipLabel(owners) {
+    return owners
+        .map((owner) => owner.title || `Untitled bundle ${owner.groupIndex + 1}`)
+        .join(", ");
+}
+
+function updateBundleSelectionStatus() {
+    if (!quickActionContext) return;
+
+    const hasBundles = quickActionContext.customDomainGroups.length > 0;
+    const selectedIndex = Number(bundleSelectEl.value);
+    const isAlreadyInSelectedBundle = quickActionContext.bundleMembershipByIndex.has(selectedIndex);
+    const isInAnyBundle = quickActionContext.bundleOwners.length > 0;
+    const isOnlyInSelectedBundle = isAlreadyInSelectedBundle && quickActionContext.bundleOwners.every((owner) => owner.groupIndex === selectedIndex);
+
+    applyBundleActionButton.disabled = !hasBundles || isAlreadyInSelectedBundle || isInAnyBundle || quickActionInFlight;
+    removeBundleActionButton.disabled = !hasBundles || !isAlreadyInSelectedBundle || quickActionInFlight;
+
+    if (!hasBundles) {
+        bundleActionStatusEl.textContent = "No custom bundles exist yet. Open Settings to create one.";
+    } else if (isOnlyInSelectedBundle) {
+        bundleActionStatusEl.textContent = `${quickActionContext.hostname} is already in this bundle. Use Remove to take it out.`;
+    } else if (isInAnyBundle) {
+        bundleActionStatusEl.textContent = `${quickActionContext.hostname} is already in ${getBundleOwnershipLabel(quickActionContext.bundleOwners)}. Remove it there before adding it to another bundle.`;
+    } else {
+        bundleActionStatusEl.textContent = `Add ${quickActionContext.hostname} to ${normalizeBundleTitle(quickActionContext.customDomainGroups[selectedIndex], selectedIndex)}.`;
+    }
 }
 
 async function updateSyncList(key, updateList) {
@@ -160,6 +218,55 @@ async function toggleExactAction() {
         quickActionInFlight = false;
         renderQuickActions(quickActionContext);
     }
+}
+
+async function updateSelectedBundleMembership({ shouldAdd }) {
+    if (!quickActionContext) return;
+
+    const selectedIndex = Number(bundleSelectEl.value);
+    if (!Number.isInteger(selectedIndex) || selectedIndex < 0) return;
+
+    quickActionInFlight = true;
+    renderQuickActions(quickActionContext);
+
+    try {
+        const stored = await chrome.storage.sync.get(DEFAULTS);
+        const customDomainGroups = Array.isArray(stored.customDomainGroups) ? stored.customDomainGroups : [];
+        const selectedGroup = customDomainGroups[selectedIndex];
+        if (!selectedGroup) return;
+
+        const latestOwners = getCustomDomainBundleEntryOwners(customDomainGroups, quickActionContext.hostname);
+        const latestSelectedOwners = latestOwners.filter((owner) => owner.groupIndex === selectedIndex);
+
+        if (shouldAdd && latestOwners.length > 0) return;
+        if (!shouldAdd && latestSelectedOwners.length === 0) return;
+
+        const currentDomains = Array.isArray(selectedGroup.domains) ? selectedGroup.domains : [];
+        const normalizedDomains = normalizeLowerArray(currentDomains);
+        const nextDomains = shouldAdd
+            ? [...normalizedDomains, quickActionContext.hostname]
+            : normalizedDomains.filter((domain) => domain !== quickActionContext.hostname);
+
+        customDomainGroups[selectedIndex] = {
+            ...selectedGroup,
+            domains: nextDomains,
+        };
+        await chrome.storage.sync.set({ customDomainGroups });
+        await chrome.runtime.sendMessage({ type: "sumtabs:force-reevaluate" });
+
+        await renderActiveTabStatus();
+    } finally {
+        quickActionInFlight = false;
+        renderQuickActions(quickActionContext);
+    }
+}
+
+async function addHostnameToSelectedBundle() {
+    return updateSelectedBundleMembership({ shouldAdd: true });
+}
+
+async function removeHostnameFromSelectedBundle() {
+    return updateSelectedBundleMembership({ shouldAdd: false });
 }
 
 async function toggleDomainAction() {
@@ -258,6 +365,10 @@ async function renderActiveTabStatus() {
         explanation: getExplanation(activeTab, grouping),
     });
 
+    const customDomainGroups = Array.isArray(settings.customDomainGroups) ? settings.customDomainGroups : [];
+    const bundleOwners = getCustomDomainBundleEntryOwners(customDomainGroups, grouping.hostname);
+    const bundleMembershipByIndex = new Set(bundleOwners.map((owner) => owner.groupIndex));
+
     renderQuickActions({
         hostname: grouping.hostname,
         exactActionEnabled: excludedFromRootCollapse.has(grouping.hostname),
@@ -266,6 +377,9 @@ async function renderActiveTabStatus() {
         domainActionAffectsCurrentTab: domainAction?.affectsHostname ?? false,
         domainActionLabel: domainAction?.label ?? "",
         domainActionToken: domainAction?.token ?? "",
+        customDomainGroups,
+        bundleMembershipByIndex,
+        bundleOwners,
     });
 }
 
@@ -286,6 +400,19 @@ toggleDomainActionButton.addEventListener("click", () => {
     });
 });
 
+bundleSelectEl.addEventListener("change", updateBundleSelectionStatus);
+
+applyBundleActionButton.addEventListener("click", () => {
+    addHostnameToSelectedBundle().catch((error) => {
+        console.error("Failed to add hostname to custom domain bundle", error);
+    });
+});
+
+removeBundleActionButton.addEventListener("click", () => {
+    removeHostnameFromSelectedBundle().catch((error) => {
+        console.error("Failed to remove hostname from custom domain bundle", error);
+    });
+});
 
 forceReevaluateButton?.addEventListener("click", async () => {
     if (!forceReevaluateButton) return;
