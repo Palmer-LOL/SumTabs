@@ -119,6 +119,9 @@ setInterval(() => {
 // -------------------- UTIL --------------------
 
 const NONE = chrome.tabGroups.TAB_GROUP_ID_NONE;
+const GROUP_OWNERSHIP_UNGROUPED = "ungrouped";
+const GROUP_OWNERSHIP_MANAGED = "managed";
+const GROUP_OWNERSHIP_PROTECTED = "protected";
 
 const lastActiveGroupByWindow = new Map();
 const groupTitleCache = new Map(); // groupId -> title
@@ -170,9 +173,9 @@ async function withSettings(fn) {
     return fn();
 }
 
-async function getGroupTitle(groupId) {
+async function getGroupTitle(groupId, { fresh = false } = {}) {
     if (groupId == null || groupId === NONE) return null;
-    if (groupTitleCache.has(groupId)) return groupTitleCache.get(groupId);
+    if (!fresh && groupTitleCache.has(groupId)) return groupTitleCache.get(groupId);
 
     try {
         const g = await chrome.tabGroups.get(groupId);
@@ -180,8 +183,22 @@ async function getGroupTitle(groupId) {
         groupTitleCache.set(groupId, title);
         return title;
     } catch {
+        groupTitleCache.delete(groupId);
         return null;
     }
+}
+
+async function classifyGroupOwnership(groupId, { fresh = false } = {}) {
+    if (groupId == null || groupId === NONE) return GROUP_OWNERSHIP_UNGROUPED;
+
+    const title = await getGroupTitle(groupId, { fresh });
+    return isManagedGroupTitle(title)
+        ? GROUP_OWNERSHIP_MANAGED
+        : GROUP_OWNERSHIP_PROTECTED;
+}
+
+async function classifyTabGroup(tab, options) {
+    return classifyGroupOwnership(tab?.groupId, options);
 }
 
 async function ensureGroupTitle(groupId, title) {
@@ -206,6 +223,8 @@ async function ensureGroupColor(groupId, color) {
 
     try {
         const group = await chrome.tabGroups.get(groupId);
+        if (!isManagedGroupTitle(group?.title)) return false;
+        groupTitleCache.set(groupId, group.title);
         if (group?.color === color) return false;
 
         acquireMutationLock(250);
@@ -217,14 +236,19 @@ async function ensureGroupColor(groupId, color) {
 }
 
 async function setGroupCollapsed(groupId, collapsed) {
+    if (await classifyGroupOwnership(groupId, { fresh: true }) !== GROUP_OWNERSHIP_MANAGED) return false;
+
     try {
         acquireMutationLock(250);
         await chrome.tabGroups.update(groupId, { collapsed });
-    } catch {}
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 async function expandGroupIfCollapsed(groupId) {
-    if (groupId == null || groupId === NONE) return;
+    if (await classifyGroupOwnership(groupId, { fresh: true }) !== GROUP_OWNERSHIP_MANAGED) return;
 
     try {
         const group = await chrome.tabGroups.get(groupId);
@@ -261,11 +285,13 @@ async function runChromiumGroupTitleRenderWorkaround(windowId) {
         for (const gid of groupIds) {
             try {
                 const group = await chrome.tabGroups.get(gid);
+                if (!isManagedGroupTitle(group?.title)) continue;
+                groupTitleCache.set(gid, group.title);
                 collapseStateByGroup.set(gid, !!group?.collapsed);
             } catch {}
         }
 
-        for (const gid of groupIds) {
+        for (const gid of collapseStateByGroup.keys()) {
             await setGroupCollapsed(gid, true);
         }
 
@@ -284,33 +310,68 @@ async function runChromiumGroupTitleRenderWorkaround(windowId) {
     }
 }
 
-async function ungroupTab(tabId) {
+async function ungroupManagedTab(tabId, expectedGroupId) {
     try {
+        const tab = await chrome.tabs.get(tabId);
+        if (!tab || tab.pinned || tab.groupId !== expectedGroupId) return false;
+        if (await classifyGroupOwnership(expectedGroupId, { fresh: true }) !== GROUP_OWNERSHIP_MANAGED) return false;
+
         acquireMutationLock(250);
         await chrome.tabs.ungroup(tabId);
-    } catch {}
+        return true;
+    } catch {
+        return false;
+    }
 }
 
-// Returns tabs in window whose CURRENT identity matches groupIdentity.
-// Excludes pinned tabs and non-http(s).
-async function getMatchingTabs(windowId, groupIdentity) {
+// Returns eligible tabs in the window whose CURRENT identity matches groupIdentity.
+// Excludes pinned tabs, non-http(s), and tabs inside user-created groups.
+async function getEligibleMatchingTabs(windowId, groupIdentity) {
     const tabs = await chrome.tabs.query({ windowId });
     const matches = [];
 
     for (const t of tabs) {
         const grouping = resolveTabGrouping(t);
-        if (grouping?.identity === groupIdentity) matches.push(t);
+        if (grouping?.identity !== groupIdentity) continue;
+
+        const ownership = await classifyTabGroup(t);
+        if (ownership === GROUP_OWNERSHIP_PROTECTED) continue;
+
+        matches.push(t);
     }
     return matches;
 }
 
+async function revalidateEligibleMatchingTabs(candidates, windowId, groupIdentity) {
+    const matches = [];
+
+    for (const candidate of candidates) {
+        if (candidate?.id == null) continue;
+
+        try {
+            const current = await chrome.tabs.get(candidate.id);
+            if (!current || current.pinned || current.windowId !== windowId) continue;
+
+            const grouping = resolveTabGrouping(current);
+            if (grouping?.identity !== groupIdentity) continue;
+
+            const ownership = await classifyTabGroup(current, { fresh: true });
+            if (ownership === GROUP_OWNERSHIP_PROTECTED) continue;
+
+            matches.push(current);
+        } catch {}
+    }
+
+    return matches;
+}
+
 // Find group by identity, but only if group title exactly equals identity.
-async function findExistingGroupIdForIdentity(matches, groupIdentity) {
+async function findExistingGroupIdForIdentity(matches, groupIdentity, { fresh = false } = {}) {
     for (const t of matches) {
         const gid = t.groupId;
         if (gid == null || gid === NONE) continue;
 
-        const title = await getGroupTitle(gid);
+        const title = await getGroupTitle(gid, { fresh });
         if (title === groupIdentity) return gid;
     }
     return null;
@@ -337,13 +398,13 @@ async function cleanupManagedSingletonGroupsInWindow(windowId) {
         for (const [gid, groupedTabs] of tabsByGroupId.entries()) {
             if (groupedTabs.length !== 1) continue;
 
-            const title = await getGroupTitle(gid);
-            if (!title || !title.startsWith(AUTO_GROUP_PREFIX)) continue;
+            const title = await getGroupTitle(gid, { fresh: true });
+            if (!isManagedGroupTitle(title)) continue;
 
             const [singletonTab] = groupedTabs;
             if (!singletonTab?.id || singletonTab.pinned) continue;
 
-            await ungroupTab(singletonTab.id);
+            await ungroupManagedTab(singletonTab.id, gid);
         }
     } catch {}
 }
@@ -361,24 +422,26 @@ async function enforceGroupMembershipForTab(tab, currentGrouping) {
     const gid = tab.groupId;
     if (gid == null || gid === NONE) return;
 
-    const title = await getGroupTitle(gid);
-    if (!title) return;
+    const title = await getGroupTitle(gid, { fresh: true });
 
-    // Only police groups created/managed by this extension.
-    if (!title.startsWith(AUTO_GROUP_PREFIX)) return;
+    // Only police groups created/managed by this extension. Unknown groups fail closed.
+    if (!isManagedGroupTitle(title)) return;
 
     const currentIdentity = currentGrouping?.identity;
     if (!currentIdentity) return;
 
     // If tab no longer matches the group's identity, ungroup it.
     if (title !== currentIdentity) {
-        await ungroupTab(tab.id);
+        await ungroupManagedTab(tab.id, gid);
     }
 }
 
 async function maybeGroupTab(tab, currentGrouping) {
     if (!tab || tab.id == null || tab.windowId == null) return;
     if (tab.pinned) return;
+
+    // User-created groups are protected. SumTabs only acts on ungrouped tabs or its own prefixed groups.
+    if (await classifyTabGroup(tab, { fresh: true }) === GROUP_OWNERSHIP_PROTECTED) return;
 
     // Optional: ignore grouping while the tab is still on its initial URL
     if (IGNORE_INITIAL_TAB_URL_FOR_GROUPING) {
@@ -393,30 +456,39 @@ async function maybeGroupTab(tab, currentGrouping) {
     // Membership enforcement first
     await enforceGroupMembershipForTab(tab, currentGrouping);
 
-    const matches = await getMatchingTabs(tab.windowId, groupIdentity);
+    let matches = await getEligibleMatchingTabs(tab.windowId, groupIdentity);
     // Respect threshold for both creating new groups and attaching to existing managed groups.
     if (matches.length < MIN_TABS_TO_GROUP) return;
 
-    const existingGroupId = await findExistingGroupIdForIdentity(matches, groupIdentity);
+    // Re-fetch ownership and identity immediately before mutation to minimize races with user actions.
+    matches = await revalidateEligibleMatchingTabs(matches, tab.windowId, groupIdentity);
+    if (matches.length < MIN_TABS_TO_GROUP) return;
+    if (!matches.some(t => t.id === tab.id)) return;
+
+    const existingGroupId = await findExistingGroupIdForIdentity(matches, groupIdentity, { fresh: true });
     const desiredColor = customIdentityToColor.get(groupIdentity);
 
     if (existingGroupId != null) {
+        const [currentTab] = await revalidateEligibleMatchingTabs([tab], tab.windowId, groupIdentity);
+        if (!currentTab) return;
+        if (await classifyGroupOwnership(existingGroupId, { fresh: true }) !== GROUP_OWNERSHIP_MANAGED) return;
+
         try {
             acquireMutationLock(300);
             await chrome.tabs.group({ tabIds: [tab.id], groupId: existingGroupId });
-            const didRenameGroup = await ensureGroupTitle(existingGroupId, groupIdentity);
             await ensureGroupColor(existingGroupId, desiredColor);
             await expandGroupIfCollapsed(existingGroupId);
-            if (didRenameGroup) {
-                await runChromiumGroupTitleRenderWorkaround(tab.windowId);
-            }
         } catch {}
         return;
     }
 
-    // Create new group containing all matching tabs
+    // Revalidate once more before creating a group; the browser API has no atomic ownership precondition.
+    matches = await revalidateEligibleMatchingTabs(matches, tab.windowId, groupIdentity);
+    if (matches.length < MIN_TABS_TO_GROUP) return;
+    if (!matches.some(t => t.id === tab.id)) return;
+
+    // Create new group containing all currently eligible matching tabs.
     const tabIds = matches.map(t => t.id).filter(id => id != null);
-    if (!tabIds.includes(tab.id)) tabIds.push(tab.id);
 
     try {
         acquireMutationLock(350);
@@ -434,19 +506,26 @@ async function handleActivation(tabId, windowId) {
 
     const prevGroupId = lastActiveGroupByWindow.get(windowId);
     const currGroupId = (tab.groupId != null ? tab.groupId : NONE);
+    const currOwnership = await classifyGroupOwnership(currGroupId, { fresh: true });
+
+    lastActiveGroupByWindow.set(windowId, currGroupId);
+
+    // Focus mode pauses while the user is working inside a user-created group.
+    if (currOwnership === GROUP_OWNERSHIP_PROTECTED) return;
 
     if (prevGroupId != null && prevGroupId !== NONE && prevGroupId !== currGroupId) {
         await setGroupCollapsed(prevGroupId, true);
     }
-    if (currGroupId != null && currGroupId !== NONE && currGroupId !== prevGroupId) {
+    if (currOwnership === GROUP_OWNERSHIP_MANAGED && currGroupId !== prevGroupId) {
         await setGroupCollapsed(currGroupId, false);
     }
-
-    lastActiveGroupByWindow.set(windowId, currGroupId);
 }
 
 async function collapseAllGroupsExcept(windowId, keepGroupId) {
     try {
+        const keepOwnership = await classifyGroupOwnership(keepGroupId, { fresh: true });
+        if (keepOwnership === GROUP_OWNERSHIP_PROTECTED) return;
+
         const tabs = await chrome.tabs.query({ windowId });
         const groupIds = new Set();
 
@@ -455,8 +534,10 @@ async function collapseAllGroupsExcept(windowId, keepGroupId) {
         }
 
         for (const gid of groupIds) {
-            if (keepGroupId != null && keepGroupId !== NONE && gid === keepGroupId) {
-                // Keep the active/target group expanded
+            if (await classifyGroupOwnership(gid, { fresh: true }) !== GROUP_OWNERSHIP_MANAGED) continue;
+
+            if (keepOwnership === GROUP_OWNERSHIP_MANAGED && gid === keepGroupId) {
+                // Keep the active/target managed group expanded.
                 await setGroupCollapsed(gid, false);
             } else {
                 await setGroupCollapsed(gid, true);
@@ -503,7 +584,7 @@ async function forceReevaluateAllWindows() {
             if (!tab || tab.id == null || tab.pinned) continue;
             if (tab.groupId == null || tab.groupId === NONE) continue;
 
-            const title = await getGroupTitle(tab.groupId);
+            const title = await getGroupTitle(tab.groupId, { fresh: true });
             if (!isManagedGroupTitle(title)) continue;
 
             const parsed = safeParseUrl(tab.url || tab.pendingUrl);
