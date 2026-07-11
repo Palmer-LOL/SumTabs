@@ -3,29 +3,44 @@ import { getCustomDomainBundleEntryConflicts, parseCustomDomainRule } from "./gr
 
 const $ = (id) => document.getElementById(id);
 const MIN_GROUPING_THRESHOLD = 2;
+const VALID_GROUP_COLORS = new Set(["grey", "blue", "red", "yellow", "green", "pink", "purple", "cyan", "orange"]);
 
 let customGroupsState = [];
-let selectedGroupIndex = 0;
-const VALID_GROUP_COLORS = new Set(["grey", "blue", "red", "yellow", "green", "pink", "purple", "cyan", "orange"]);
+let selectedGroupIndex = -1;
+let savedSnapshot = "";
+let jsonDraftDirty = false;
+let pendingDeletion = null;
+let loading = true;
+
+function splitNonEmptyLines(text) {
+    return String(text || "")
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+}
 
 function domainsToLines(domains) {
     return (domains || [])
-    .map(d => String(d).trim().toLowerCase())
-    .filter(Boolean)
-    .join("\n");
+        .map((domain) => String(domain).trim().toLowerCase())
+        .filter(Boolean)
+        .join("\n");
+}
+
+function arrayToLines(values) {
+    return (values || []).join("\n");
 }
 
 function canonicalizeDomainEntry(rawEntry) {
     const parsed = parseCustomDomainRule(rawEntry);
     if (!parsed.valid) return { valid: false, raw: parsed.raw, error: parsed.error };
 
-    const canonicalEntry = parsed.pathPrefix
-        ? `${parsed.hostname}${parsed.pathPrefix}`
-        : parsed.hostname;
-
     return {
         valid: true,
-        canonicalEntry,
+        canonicalEntry: parsed.pathPrefix
+            ? `${parsed.hostname}${parsed.pathPrefix}`
+            : parsed.hostname,
+        hostname: parsed.hostname,
+        pathPrefix: parsed.pathPrefix,
     };
 }
 
@@ -34,10 +49,7 @@ function parseDomainsTextarea(text) {
     const validDomains = [];
     const invalidEntries = [];
 
-    for (const line of String(text || "").split(/\r?\n/)) {
-        const raw = String(line).trim();
-        if (!raw) continue;
-
+    for (const raw of splitNonEmptyLines(text)) {
         const normalized = canonicalizeDomainEntry(raw);
         if (!normalized.valid) {
             invalidEntries.push({ raw, error: normalized.error || "Invalid domain rule." });
@@ -56,50 +68,90 @@ function parseDomainsTextarea(text) {
     };
 }
 
-function normalizeCustomGroups(groups) {
-    if (!Array.isArray(groups)) return [];
+function parseHostnameRulesTextarea(text) {
+    const seen = new Set();
+    const validHostnames = [];
+    const invalidEntries = [];
 
-    const out = [];
-    for (const g of groups) {
-        const title = String(g?.title ?? "").trim();
-        const domainsText = domainsToLines(Array.isArray(g?.domains) ? g.domains : []);
-        const parsedDomains = parseDomainsTextarea(domainsText);
-        const color = String(g?.color ?? "").trim().toLowerCase();
+    for (const raw of splitNonEmptyLines(text)) {
+        const normalized = canonicalizeDomainEntry(raw);
+        if (!normalized.valid) {
+            invalidEntries.push({ raw, error: normalized.error || "Invalid hostname." });
+            continue;
+        }
 
-        if (!title) continue;
-        out.push({
-            title,
-            domains: parsedDomains.validDomains,
-            domainsText: parsedDomains.canonicalText,
-            ...(VALID_GROUP_COLORS.has(color) ? { color } : {}),
-        });
+        if (normalized.pathPrefix) {
+            invalidEntries.push({ raw, error: "Path rules are not supported in this list." });
+            continue;
+        }
+
+        if (seen.has(normalized.hostname)) continue;
+        seen.add(normalized.hostname);
+        validHostnames.push(normalized.hostname);
     }
 
-    return out;
+    return {
+        validHostnames,
+        invalidEntries,
+        canonicalText: validHostnames.join("\n"),
+    };
 }
 
-function linesToArray(text) {
-    return text
-    .split(/\r?\n/)
-    .map(s => s.trim().toLowerCase())
-    .filter(Boolean);
+function normalizeStoredGroups(groups) {
+    if (!Array.isArray(groups)) return [];
+
+    return groups.map((group) => {
+        const color = String(group?.color ?? "").trim().toLowerCase();
+        const domainsText = domainsToLines(Array.isArray(group?.domains) ? group.domains : []);
+        return {
+            title: String(group?.title ?? "").trim(),
+            domainsText,
+            color: VALID_GROUP_COLORS.has(color) ? color : "",
+        };
+    });
 }
 
-function arrayToLines(arr) {
-    return (arr || []).join("\n");
+function groupRawDomains(group) {
+    return splitNonEmptyLines(group?.domainsText ?? "");
 }
 
-function setStatus(msg, ok = true) {
-    const el = $("status");
-    el.textContent = msg;
-    el.style.color = ok ? "green" : "crimson";
-    setTimeout(() => { el.textContent = ""; }, 2500);
+function groupsForRawJson() {
+    return customGroupsState.map((group) => ({
+        title: String(group?.title ?? ""),
+        domains: groupRawDomains(group),
+        ...(VALID_GROUP_COLORS.has(String(group?.color ?? "")) ? { color: group.color } : {}),
+    }));
 }
 
-function normalizeMinTabsToGroup(value) {
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed)) return DEFAULTS.minTabsToGroup;
-    return Math.max(MIN_GROUPING_THRESHOLD, Math.floor(parsed));
+function groupsForPersistence() {
+    return customGroupsState.map((group) => {
+        const parsedDomains = parseDomainsTextarea(group?.domainsText ?? "");
+        const color = String(group?.color ?? "").trim().toLowerCase();
+        return {
+            title: String(group?.title ?? "").trim(),
+            domains: parsedDomains.validDomains,
+            ...(VALID_GROUP_COLORS.has(color) ? { color } : {}),
+        };
+    });
+}
+
+function setValidationMessage(element, message = "", state = "") {
+    if (!element) return;
+    element.textContent = message;
+    if (state) element.dataset.state = state;
+    else delete element.dataset.state;
+}
+
+function setFieldValidity(field, valid) {
+    if (!field) return;
+    field.setAttribute("aria-invalid", String(!valid));
+}
+
+function formatInvalidEntryMessage(invalidEntries, noun = "rule") {
+    const first = invalidEntries[0];
+    const extraCount = invalidEntries.length - 1;
+    const extraMessage = extraCount > 0 ? ` (+${extraCount} more)` : "";
+    return `${noun === "rule" ? "Invalid rule" : "Invalid hostname"}: “${first.raw}” — ${first.error}${extraMessage}`;
 }
 
 function getDuplicateDomainMessage(groups) {
@@ -108,71 +160,172 @@ function getDuplicateDomainMessage(groups) {
 
     const firstConflict = conflicts[0];
     const titles = firstConflict.owners
-    .map((owner) => owner.title || `Untitled bundle ${owner.groupIndex + 1}`)
-    .join(", ");
+        .map((owner) => owner.title || `Untitled bundle ${owner.groupIndex + 1}`)
+        .join(", ");
     const extraCount = conflicts.length - 1;
     const extraMessage = extraCount > 0 ? ` (+${extraCount} more)` : "";
-    return `Duplicate bundle rule "${firstConflict.entry}" appears in: ${titles}${extraMessage}`;
+    return `Duplicate bundle rule “${firstConflict.entry}” appears in: ${titles}${extraMessage}`;
 }
 
-function setDomainsValidation(invalidEntries) {
-    const el = $("groupDomainsValidation");
-    if (!el) return;
+function validateSettings() {
+    const errors = [];
 
-    const duplicateMessage = getDuplicateDomainMessage(readGroupsSnapshotFromState());
-    if (duplicateMessage) {
-        el.textContent = duplicateMessage;
-        el.style.color = "#b45309";
-        return;
+    const minTabsField = $("minTabsToGroup");
+    const minTabsValue = Number(minTabsField.value);
+    const minTabsValid = Number.isInteger(minTabsValue) && minTabsValue >= MIN_GROUPING_THRESHOLD;
+    setFieldValidity(minTabsField, minTabsValid);
+    setValidationMessage(
+        $("minTabsToGroupValidation"),
+        minTabsValid ? "" : `Enter a whole number of ${MIN_GROUPING_THRESHOLD} or greater.`,
+        minTabsValid ? "" : "error",
+    );
+    if (!minTabsValid) errors.push("Grouping threshold is invalid.");
+
+    for (const config of [
+        { fieldId: "commonMultipartSuffixes", validationId: "commonMultipartSuffixesValidation" },
+        { fieldId: "excludedFromRootCollapse", validationId: "excludedFromRootCollapseValidation" },
+    ]) {
+        const field = $(config.fieldId);
+        const parsed = parseHostnameRulesTextarea(field.value);
+        const valid = parsed.invalidEntries.length === 0;
+        setFieldValidity(field, valid);
+        setValidationMessage(
+            $(config.validationId),
+            valid ? `${parsed.validHostnames.length} valid ${parsed.validHostnames.length === 1 ? "hostname" : "hostnames"}.` : formatInvalidEntryMessage(parsed.invalidEntries, "hostname"),
+            valid ? "valid" : "error",
+        );
+        if (!valid) errors.push(`${config.fieldId} contains invalid entries.`);
     }
 
-    if (!invalidEntries.length) {
-        el.textContent = "All entries are valid.";
-        el.style.color = "green";
-        return;
+    const groupErrors = customGroupsState.map((group, index) => {
+        const titleMissing = !String(group?.title ?? "").trim();
+        const parsedDomains = parseDomainsTextarea(group?.domainsText ?? "");
+        if (titleMissing) errors.push(`Bundle ${index + 1} needs a title.`);
+        if (parsedDomains.invalidEntries.length) errors.push(`Bundle ${index + 1} contains invalid rules.`);
+        return { titleMissing, parsedDomains };
+    });
+
+    const duplicateMessage = getDuplicateDomainMessage(groupsForPersistence());
+    if (duplicateMessage) errors.push(duplicateMessage);
+
+    const currentGroup = customGroupsState[selectedGroupIndex];
+    const currentValidation = groupErrors[selectedGroupIndex];
+    const titleField = $("groupTitle");
+    const domainsField = $("groupDomains");
+
+    if (currentGroup && currentValidation) {
+        setFieldValidity(titleField, !currentValidation.titleMissing);
+        setValidationMessage(
+            $("groupTitleValidation"),
+            currentValidation.titleMissing ? "Enter a title for this bundle." : "",
+            currentValidation.titleMissing ? "error" : "",
+        );
+
+        const domainsValid = currentValidation.parsedDomains.invalidEntries.length === 0 && !duplicateMessage;
+        setFieldValidity(domainsField, domainsValid);
+        if (currentValidation.parsedDomains.invalidEntries.length) {
+            setValidationMessage(
+                $("groupDomainsValidation"),
+                formatInvalidEntryMessage(currentValidation.parsedDomains.invalidEntries),
+                "error",
+            );
+        } else if (duplicateMessage) {
+            setValidationMessage($("groupDomainsValidation"), duplicateMessage, "error");
+        } else {
+            const count = currentValidation.parsedDomains.validDomains.length;
+            setValidationMessage(
+                $("groupDomainsValidation"),
+                `${count} valid ${count === 1 ? "rule" : "rules"}.`,
+                "valid",
+            );
+        }
+    } else {
+        setFieldValidity(titleField, true);
+        setFieldValidity(domainsField, true);
+        setValidationMessage($("groupTitleValidation"));
+        setValidationMessage($("groupDomainsValidation"));
     }
 
-    const firstInvalid = invalidEntries[0];
-    const extraCount = invalidEntries.length - 1;
-    const extraMessage = extraCount > 0 ? ` (+${extraCount} more)` : "";
-    el.textContent = `Ignoring malformed rule: "${firstInvalid.raw}" (${firstInvalid.error})${extraMessage}`;
-    el.style.color = "#b45309";
+    return errors;
 }
 
-function getNextBundleTitle() {
-    const base = "New bundle";
-    const existing = new Set(customGroupsState.map(g => String(g?.title || "").trim()));
-    if (!existing.has(base)) return base;
+function captureUiSnapshot() {
+    return JSON.stringify({
+        minTabsToGroup: $("minTabsToGroup").value,
+        collapseOtherGroupsOnNavEvents: $("collapseOtherGroupsOnNavEvents").checked,
+        keepManagedGroupsAtFront: $("keepManagedGroupsAtFront").checked,
+        ungroupSingletonManagedGroups: $("ungroupSingletonManagedGroups").checked,
+        ignoreInitialTabUrlForGrouping: $("ignoreInitialTabUrlForGrouping").checked,
+        ignoreInitialTabUrlForEnforcement: $("ignoreInitialTabUrlForEnforcement").checked,
+        commonMultipartSuffixes: $("commonMultipartSuffixes").value,
+        excludedFromRootCollapse: $("excludedFromRootCollapse").value,
+        customDomainGroups: customGroupsState.map((group) => ({
+            title: String(group?.title ?? ""),
+            domainsText: String(group?.domainsText ?? ""),
+            color: String(group?.color ?? ""),
+        })),
+    });
+}
 
-    let i = 2;
-    while (existing.has(`${base} ${i}`)) i += 1;
-    return `${base} ${i}`;
+function hasUnsavedChanges() {
+    return captureUiSnapshot() !== savedSnapshot;
+}
+
+function setStatus(message, state = "neutral") {
+    const status = $("status");
+    status.textContent = message;
+    status.dataset.state = state;
+}
+
+function updateSaveState(customMessage = null) {
+    if (loading) return;
+
+    const errors = validateSettings();
+    const dirty = hasUnsavedChanges();
+    const saveBlocked = errors.length > 0 || jsonDraftDirty;
+    $("save").disabled = !dirty || saveBlocked;
+
+    if (customMessage) {
+        setStatus(customMessage.message, customMessage.state);
+    } else if (errors.length) {
+        setStatus(`${errors.length} ${errors.length === 1 ? "issue needs" : "issues need"} attention before saving.`, "error");
+    } else if (jsonDraftDirty) {
+        setStatus("Raw JSON has unapplied changes.", "warning");
+    } else if (dirty) {
+        setStatus("Unsaved changes.", "warning");
+    } else {
+        setStatus("No unsaved changes.", "neutral");
+    }
+}
+
+function syncAdvancedJsonFromUi({ force = false } = {}) {
+    if (jsonDraftDirty && !force) return;
+    $("customDomainGroupsJson").value = JSON.stringify(groupsForRawJson(), null, 2);
+    jsonDraftDirty = false;
+    setValidationMessage($("customDomainGroupsJsonStatus"));
 }
 
 function updateSelectedGroupFromInputs() {
     const current = customGroupsState[selectedGroupIndex];
     if (!current) return;
 
-    const parsedDomains = parseDomainsTextarea($("groupDomains").value);
-
-    current.title = $("groupTitle").value.trim();
+    current.title = $("groupTitle").value;
     current.domainsText = $("groupDomains").value;
-    current.domains = parsedDomains.validDomains;
     current.color = String($("groupColor").value || "").trim().toLowerCase();
+}
 
-    setDomainsValidation(parsedDomains.invalidEntries);
+function bundleNeedsAttention(group) {
+    return !String(group?.title ?? "").trim() || parseDomainsTextarea(group?.domainsText ?? "").invalidEntries.length > 0;
 }
 
 function renderSelectedGroup() {
     const current = customGroupsState[selectedGroupIndex];
+    const disabled = !current;
+
     $("groupTitle").value = current?.title ?? "";
-    $("groupDomains").value = current?.domainsText ?? domainsToLines(current?.domains ?? []);
+    $("groupDomains").value = current?.domainsText ?? "";
     $("groupColor").value = current?.color ?? "";
 
-    const parsedDomains = parseDomainsTextarea($("groupDomains").value);
-    setDomainsValidation(parsedDomains.invalidEntries);
-
-    const disabled = !current;
     $("groupTitle").disabled = disabled;
     $("groupDomains").disabled = disabled;
     $("groupColor").disabled = disabled;
@@ -183,15 +336,19 @@ function renderGroupSelect() {
     const select = $("customGroupSelect");
     select.innerHTML = "";
 
-    customGroupsState.forEach((group, i) => {
+    customGroupsState.forEach((group, index) => {
         const option = document.createElement("option");
-        const title = String(group.title || "").trim() || `Untitled bundle ${i + 1}`;
-        option.value = String(i);
-        option.textContent = title;
+        const title = String(group?.title ?? "").trim() || `Untitled bundle ${index + 1}`;
+        option.value = String(index);
+        option.textContent = bundleNeedsAttention(group) ? `${title} — needs attention` : title;
         select.appendChild(option);
     });
 
-    if (customGroupsState.length === 0) {
+    const hasGroups = customGroupsState.length > 0;
+    $("bundleEmptyState").hidden = hasGroups;
+    $("bundleEditorInterface").hidden = !hasGroups;
+
+    if (!hasGroups) {
         selectedGroupIndex = -1;
         renderSelectedGroup();
         syncAdvancedJsonFromUi();
@@ -208,167 +365,260 @@ function renderGroupSelect() {
 }
 
 function setGroupsState(groups, preferredIndex = 0) {
-    customGroupsState = Array.isArray(groups)
-    ? groups.map((g) => {
-        const parsedDomains = parseDomainsTextarea(domainsToLines(g?.domains ?? []));
-        return {
-            title: String(g?.title ?? "").trim(),
-            domains: parsedDomains.validDomains,
-            domainsText: parsedDomains.canonicalText,
-            color: VALID_GROUP_COLORS.has(String(g?.color ?? "").trim().toLowerCase()) ? String(g.color).trim().toLowerCase() : "",
-        };
-    })
-    : [];
+    customGroupsState = Array.isArray(groups) ? groups.map((group) => ({
+        title: String(group?.title ?? ""),
+        domainsText: String(group?.domainsText ?? domainsToLines(group?.domains ?? [])),
+        color: VALID_GROUP_COLORS.has(String(group?.color ?? "").trim().toLowerCase())
+            ? String(group.color).trim().toLowerCase()
+            : "",
+    })) : [];
 
-    selectedGroupIndex = customGroupsState.length ? Math.max(0, Math.min(preferredIndex, customGroupsState.length - 1)) : -1;
+    selectedGroupIndex = customGroupsState.length
+        ? Math.max(0, Math.min(preferredIndex, customGroupsState.length - 1))
+        : -1;
     renderGroupSelect();
 }
 
-function readGroupsSnapshotFromState() {
-    return customGroupsState
-    .map((group) => {
-        const title = String(group?.title ?? "").trim();
-        if (!title) return null;
+function getNextBundleTitle() {
+    const base = "New bundle";
+    const existing = new Set(customGroupsState.map((group) => String(group?.title || "").trim()));
+    if (!existing.has(base)) return base;
 
-        const parsedDomains = parseDomainsTextarea(group.domainsText ?? domainsToLines(group.domains ?? []));
-        const color = String(group?.color ?? "").trim().toLowerCase();
+    let index = 2;
+    while (existing.has(`${base} ${index}`)) index += 1;
+    return `${base} ${index}`;
+}
+
+function handleStructuredEdit({ refreshSelectLabel = false } = {}) {
+    updateSelectedGroupFromInputs();
+    if (refreshSelectLabel) {
+        const option = $("customGroupSelect").options[selectedGroupIndex];
+        const group = customGroupsState[selectedGroupIndex];
+        if (option && group) {
+            const title = String(group.title || "").trim() || `Untitled bundle ${selectedGroupIndex + 1}`;
+            option.textContent = bundleNeedsAttention(group) ? `${title} — needs attention` : title;
+        }
+    }
+    syncAdvancedJsonFromUi();
+    updateSaveState();
+}
+
+function addGroup() {
+    updateSelectedGroupFromInputs();
+    customGroupsState.push({ title: getNextBundleTitle(), domainsText: "", color: "" });
+    selectedGroupIndex = customGroupsState.length - 1;
+    pendingDeletion = null;
+    $("undoDelete").hidden = true;
+    renderGroupSelect();
+    updateSaveState();
+    $("groupTitle").focus();
+    $("groupTitle").select();
+}
+
+function removeSelectedGroup() {
+    if (selectedGroupIndex < 0 || selectedGroupIndex >= customGroupsState.length) return;
+
+    updateSelectedGroupFromInputs();
+    const [removedGroup] = customGroupsState.splice(selectedGroupIndex, 1);
+    pendingDeletion = { group: removedGroup, index: selectedGroupIndex };
+    $("undoDelete").hidden = false;
+
+    if (customGroupsState.length === 0) selectedGroupIndex = -1;
+    else if (selectedGroupIndex >= customGroupsState.length) selectedGroupIndex = customGroupsState.length - 1;
+
+    renderGroupSelect();
+    updateSaveState({ message: `“${String(removedGroup.title || "Untitled bundle").trim()}” deleted. Save changes to apply.`, state: "warning" });
+}
+
+function undoDeletion() {
+    if (!pendingDeletion) return;
+
+    const index = Math.max(0, Math.min(pendingDeletion.index, customGroupsState.length));
+    customGroupsState.splice(index, 0, pendingDeletion.group);
+    selectedGroupIndex = index;
+    pendingDeletion = null;
+    $("undoDelete").hidden = true;
+    renderGroupSelect();
+    updateSaveState({ message: "Bundle deletion undone.", state: "neutral" });
+}
+
+function coerceGroupsFromJson(value) {
+    if (!Array.isArray(value)) throw new Error("The top-level JSON value must be an array.");
+
+    return value.map((group, index) => {
+        if (!group || typeof group !== "object" || Array.isArray(group)) {
+            throw new Error(`Bundle ${index + 1} must be an object.`);
+        }
+        if (typeof group.title !== "string") {
+            throw new Error(`Bundle ${index + 1} must have a string title.`);
+        }
+        if (!Array.isArray(group.domains) || group.domains.some((domain) => typeof domain !== "string")) {
+            throw new Error(`Bundle ${index + 1} must have a domains array containing only strings.`);
+        }
+
+        const color = group.color == null ? "" : String(group.color).trim().toLowerCase();
+        if (color && !VALID_GROUP_COLORS.has(color)) {
+            throw new Error(`Bundle ${index + 1} has an unsupported color.`);
+        }
 
         return {
-            title,
-            domains: parsedDomains.validDomains,
-            ...(VALID_GROUP_COLORS.has(color) ? { color } : {}),
+            title: group.title,
+            domainsText: group.domains.join("\n"),
+            color,
         };
-    })
-    .filter(Boolean);
+    });
 }
 
-function readGroupsFromUi() {
-    updateSelectedGroupFromInputs();
-
-    return readGroupsSnapshotFromState();
+function applyJsonToEditor() {
+    try {
+        const parsed = JSON.parse($("customDomainGroupsJson").value || "[]");
+        const groups = coerceGroupsFromJson(parsed);
+        jsonDraftDirty = false;
+        setGroupsState(groups, 0);
+        setValidationMessage($("customDomainGroupsJsonStatus"), "JSON applied to the editor. Save changes to persist it.", "valid");
+        updateSaveState({ message: "JSON applied to the editor. Save changes to persist it.", state: "warning" });
+    } catch (error) {
+        setValidationMessage($("customDomainGroupsJsonStatus"), `JSON error: ${error.message}`, "error");
+        updateSaveState();
+    }
 }
 
-function syncAdvancedJsonFromUi() {
-    const el = $("customDomainGroupsJson");
-    if (!el) return;
-    const groups = readGroupsFromUi();
-    el.value = JSON.stringify(groups, null, 2);
+function discardJsonEdits() {
+    syncAdvancedJsonFromUi({ force: true });
+    updateSaveState({ message: "Raw JSON edits discarded.", state: "neutral" });
+}
+
+function populateForm(settings) {
+    $("minTabsToGroup").value = String(settings.minTabsToGroup ?? DEFAULTS.minTabsToGroup);
+    $("collapseOtherGroupsOnNavEvents").checked = !!settings.collapseOtherGroupsOnNavEvents;
+    $("keepManagedGroupsAtFront").checked = !!settings.keepManagedGroupsAtFront;
+    $("ungroupSingletonManagedGroups").checked = !!settings.ungroupSingletonManagedGroups;
+    $("ignoreInitialTabUrlForGrouping").checked = !!settings.ignoreInitialTabUrlForGrouping;
+    $("ignoreInitialTabUrlForEnforcement").checked = !!settings.ignoreInitialTabUrlForEnforcement;
+    $("commonMultipartSuffixes").value = arrayToLines(settings.commonMultipartSuffixes ?? DEFAULTS.commonMultipartSuffixes);
+    $("excludedFromRootCollapse").value = arrayToLines(settings.excludedFromRootCollapse ?? DEFAULTS.excludedFromRootCollapse);
+
+    jsonDraftDirty = false;
+    pendingDeletion = null;
+    $("undoDelete").hidden = true;
+    setGroupsState(normalizeStoredGroups(settings.customDomainGroups ?? DEFAULTS.customDomainGroups));
+    syncAdvancedJsonFromUi({ force: true });
 }
 
 async function load() {
+    loading = true;
     const stored = await chrome.storage.sync.get(DEFAULTS);
-    $("minTabsToGroup").value = String(normalizeMinTabsToGroup(stored.minTabsToGroup));
-    $("collapseOtherGroupsOnNavEvents").checked = !!stored.collapseOtherGroupsOnNavEvents;
-    $("keepManagedGroupsAtFront").checked = !!stored.keepManagedGroupsAtFront;
-    // Default (false): keep singleton managed groups grouped. Enabled (true): ungroup them.
-    $("ungroupSingletonManagedGroups").checked = !!stored.ungroupSingletonManagedGroups;
-    $("ignoreInitialTabUrlForGrouping").checked = !!stored.ignoreInitialTabUrlForGrouping;
-    $("ignoreInitialTabUrlForEnforcement").checked = !!stored.ignoreInitialTabUrlForEnforcement;
-
-    // Keep legacy storage keys; the UI now describes these as separation rules.
-    $("commonMultipartSuffixes").value = arrayToLines(stored.commonMultipartSuffixes);
-    $("excludedFromRootCollapse").value = arrayToLines(stored.excludedFromRootCollapse);
-
-    const loadedGroups = normalizeCustomGroups(stored.customDomainGroups ?? DEFAULTS.customDomainGroups);
-    setGroupsState(loadedGroups.length ? loadedGroups : [{ title: "", domains: [] }]);
-
-    const adv = $("customDomainGroupsJson");
-    if (adv) {
-        adv.addEventListener("change", () => {
-            try {
-                const parsed = JSON.parse(adv.value || "[]");
-                const normalized = normalizeCustomGroups(parsed);
-                setGroupsState(normalized.length ? normalized : [{ title: "", domains: [] }]);
-                setStatus("Loaded bundles from JSON.");
-            } catch (e) {
-                setStatus(`Advanced JSON error: ${e.message}`, false);
-            }
-        });
-    }
+    populateForm(stored);
+    savedSnapshot = captureUiSnapshot();
+    loading = false;
+    updateSaveState();
 }
 
 async function save() {
-    const customGroups = readGroupsFromUi();
-    const duplicateMessage = getDuplicateDomainMessage(customGroups);
-    if (duplicateMessage) {
-        setStatus(duplicateMessage, false);
-        setDomainsValidation([]);
+    updateSelectedGroupFromInputs();
+    const errors = validateSettings();
+    if (errors.length || jsonDraftDirty) {
+        updateSaveState();
         return;
     }
 
-    const minTabsToGroup = normalizeMinTabsToGroup($("minTabsToGroup").value);
-    $("minTabsToGroup").value = String(minTabsToGroup);
-
+    const commonMultipartSuffixes = parseHostnameRulesTextarea($("commonMultipartSuffixes").value);
+    const excludedFromRootCollapse = parseHostnameRulesTextarea($("excludedFromRootCollapse").value);
     const payload = {
-        minTabsToGroup,
+        minTabsToGroup: Number($("minTabsToGroup").value),
         collapseOtherGroupsOnNavEvents: $("collapseOtherGroupsOnNavEvents").checked,
         keepManagedGroupsAtFront: $("keepManagedGroupsAtFront").checked,
-        // Persist singleton managed-group policy exactly as represented in the settings checkbox.
         ungroupSingletonManagedGroups: $("ungroupSingletonManagedGroups").checked,
         ignoreInitialTabUrlForGrouping: $("ignoreInitialTabUrlForGrouping").checked,
         ignoreInitialTabUrlForEnforcement: $("ignoreInitialTabUrlForEnforcement").checked,
-        // Keep the stored key names backward-compatible with existing sync data.
-        commonMultipartSuffixes: linesToArray($("commonMultipartSuffixes").value),
-        excludedFromRootCollapse: linesToArray($("excludedFromRootCollapse").value),
-        customDomainGroups: customGroups,
+        commonMultipartSuffixes: commonMultipartSuffixes.validHostnames,
+        excludedFromRootCollapse: excludedFromRootCollapse.validHostnames,
+        customDomainGroups: groupsForPersistence(),
     };
 
-    await chrome.storage.sync.set(payload);
-    setStatus("Saved.");
-    setGroupsState(customGroups.length ? customGroups : [{ title: "", domains: [] }], selectedGroupIndex);
+    $("save").disabled = true;
+    setStatus("Saving…", "neutral");
+
+    try {
+        await chrome.storage.sync.set(payload);
+        populateForm(payload);
+        savedSnapshot = captureUiSnapshot();
+        updateSaveState({ message: "Changes saved.", state: "valid" });
+    } catch (error) {
+        console.error("Failed to save SumTabs settings", error);
+        updateSaveState({ message: "Could not save changes. Try again.", state: "error" });
+    }
 }
 
-async function reset() {
-    await chrome.storage.sync.set(DEFAULTS);
-    await load();
-    setStatus("Reset to defaults.");
+function loadDefaultsIntoEditor() {
+    const confirmed = window.confirm(
+        "Load the default settings into this page?\n\nNothing will be changed until you select Save changes."
+    );
+    if (!confirmed) return;
+
+    populateForm(DEFAULTS);
+    updateSaveState({ message: "Defaults loaded. Save changes to apply them.", state: "warning" });
 }
 
-$("customGroupSelect").addEventListener("change", (event) => {
-    updateSelectedGroupFromInputs();
-    selectedGroupIndex = Number(event.target.value);
-    renderSelectedGroup();
-    syncAdvancedJsonFromUi();
-});
+function bindEvents() {
+    const simpleFields = [
+        "minTabsToGroup",
+        "collapseOtherGroupsOnNavEvents",
+        "keepManagedGroupsAtFront",
+        "ungroupSingletonManagedGroups",
+        "ignoreInitialTabUrlForGrouping",
+        "ignoreInitialTabUrlForEnforcement",
+        "commonMultipartSuffixes",
+        "excludedFromRootCollapse",
+    ];
 
-$("groupTitle").addEventListener("input", () => {
-    updateSelectedGroupFromInputs();
-    renderGroupSelect();
-});
-
-$("groupDomains").addEventListener("input", () => {
-    updateSelectedGroupFromInputs();
-    syncAdvancedJsonFromUi();
-});
-
-$("groupColor").addEventListener("change", () => {
-    updateSelectedGroupFromInputs();
-    syncAdvancedJsonFromUi();
-});
-
-$("addGroup").addEventListener("click", () => {
-    updateSelectedGroupFromInputs();
-    customGroupsState.push({ title: getNextBundleTitle(), domains: [], domainsText: "", color: "" });
-    selectedGroupIndex = customGroupsState.length - 1;
-    renderGroupSelect();
-    $("groupTitle").focus();
-    $("groupTitle").select();
-});
-
-$("removeGroup").addEventListener("click", () => {
-    if (selectedGroupIndex < 0 || selectedGroupIndex >= customGroupsState.length) return;
-
-    customGroupsState.splice(selectedGroupIndex, 1);
-    if (customGroupsState.length === 0) {
-        customGroupsState.push({ title: "", domains: [], domainsText: "", color: "" });
-        selectedGroupIndex = 0;
-    } else if (selectedGroupIndex >= customGroupsState.length) {
-        selectedGroupIndex = customGroupsState.length - 1;
+    for (const id of simpleFields) {
+        $(id).addEventListener("input", () => updateSaveState());
+        $(id).addEventListener("change", () => updateSaveState());
     }
 
-    renderGroupSelect();
-});
+    $("customGroupSelect").addEventListener("change", (event) => {
+        updateSelectedGroupFromInputs();
+        selectedGroupIndex = Number(event.target.value);
+        renderSelectedGroup();
+        updateSaveState();
+    });
 
-$("save").addEventListener("click", save);
-$("reset").addEventListener("click", reset);
-load();
+    $("groupTitle").addEventListener("input", () => handleStructuredEdit({ refreshSelectLabel: true }));
+    $("groupDomains").addEventListener("input", () => handleStructuredEdit());
+    $("groupColor").addEventListener("change", () => handleStructuredEdit());
+
+    $("addGroup").addEventListener("click", addGroup);
+    $("createFirstGroup").addEventListener("click", addGroup);
+    $("removeGroup").addEventListener("click", removeSelectedGroup);
+    $("undoDelete").addEventListener("click", undoDeletion);
+
+    $("customDomainGroupsJson").addEventListener("input", () => {
+        jsonDraftDirty = true;
+        setValidationMessage($("customDomainGroupsJsonStatus"), "JSON edits have not been applied to the structured editor.", "warning");
+        updateSaveState();
+    });
+    $("applyCustomDomainGroupsJson").addEventListener("click", applyJsonToEditor);
+    $("resetCustomDomainGroupsJson").addEventListener("click", discardJsonEdits);
+
+    $("save").addEventListener("click", () => {
+        save().catch((error) => {
+            console.error("Failed to save SumTabs settings", error);
+            updateSaveState({ message: "Could not save changes. Try again.", state: "error" });
+        });
+    });
+    $("reset").addEventListener("click", loadDefaultsIntoEditor);
+
+    window.addEventListener("beforeunload", (event) => {
+        if (!hasUnsavedChanges() && !jsonDraftDirty) return;
+        event.preventDefault();
+        event.returnValue = "";
+    });
+}
+
+bindEvents();
+load().catch((error) => {
+    loading = false;
+    console.error("Failed to load SumTabs settings", error);
+    setStatus("Could not load settings. Reload this page to try again.", "error");
+});
