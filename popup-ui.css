@@ -1,0 +1,208 @@
+/* Popup accordion and rule-toggle refinements. */
+.popup__sections {
+  display: grid;
+  gap: var(--spacing-sm);
+}
+
+.popup__section {
+  display: block;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-bg-muted);
+}
+
+.popup__section[hidden] {
+  display: none;
+}
+
+.popup__section-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  min-height: 42px;
+  padding: 10px var(--spacing-md);
+  border-radius: 9px;
+  font-weight: 650;
+  cursor: pointer;
+  list-style: none;
+}
+
+.popup__section-summary::-webkit-details-marker {
+  display: none;
+}
+
+.popup__section-summary::after {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  content: "";
+  transform: rotate(45deg) translate(-2px, 2px);
+  transition: transform 120ms ease;
+}
+
+.popup__section[open] > .popup__section-summary {
+  border-bottom: 1px solid var(--color-border);
+  border-bottom-right-radius: 0;
+  border-bottom-left-radius: 0;
+  background: var(--color-bg);
+}
+
+.popup__section[open] > .popup__section-summary::after {
+  transform: rotate(225deg) translate(-2px, 2px);
+}
+
+.popup__section-summary:hover {
+  background: var(--color-bg-hover);
+}
+
+.popup__section-summary:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+
+.popup__section-content {
+  display: grid;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+}
+
+.popup__section-description {
+  margin-bottom: 2px;
+}
+
+#statusCard,
+#quickActionsCard {
+  display: block;
+}
+
+#quickActionsCard[hidden] {
+  display: none;
+}
+
+#statusCard .popup__status-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+#quickActionsCard .popup__status-row {
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid #e8e8e8;
+}
+
+#quickActionsCard .popup__section-description + .popup__status-row {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.popup__toggle-row {
+  display: grid;
+  gap: 4px;
+}
+
+.popup__toggle-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  cursor: pointer;
+}
+
+.popup__toggle-heading:has(.toggle-switch__input:disabled) {
+  cursor: default;
+}
+
+.popup__toggle-heading .popup__status-value {
+  min-width: 0;
+  margin: 0;
+}
+
+.toggle-switch {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  min-width: 44px;
+  min-height: 28px;
+  padding: 3px;
+  cursor: pointer;
+}
+
+.toggle-switch__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.toggle-switch__track {
+  position: relative;
+  display: block;
+  width: 38px;
+  height: 22px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 999px;
+  background: #e2e2e2;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.toggle-switch__track::after {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--color-bg);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 25%);
+  content: "";
+  transition: transform 120ms ease;
+}
+
+.toggle-switch__input:checked + .toggle-switch__track {
+  border-color: var(--color-focus);
+  background: var(--color-focus);
+}
+
+.toggle-switch__input:checked + .toggle-switch__track::after {
+  transform: translateX(16px);
+}
+
+.toggle-switch__input:focus-visible + .toggle-switch__track {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.toggle-switch__input:disabled + .toggle-switch__track {
+  opacity: 0.55;
+}
+
+.toggle-switch:has(.toggle-switch__input:disabled) {
+  cursor: default;
+}
+
+.popup__rule-action-proxy[hidden] {
+  display: none;
+}
+
+.popup__section--more .button--full-width {
+  margin: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .popup__section-summary::after,
+  .toggle-switch__track,
+  .toggle-switch__track::after {
+    transition: none;
+  }
+}
