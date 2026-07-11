@@ -13,7 +13,9 @@ Codex’s role is to:
 - Implement user-requested changes
 - Preserve core behavioral invariants
 - Minimize unintended regressions
+- Run and accurately report relevant automated tests when they exist
 - Clearly describe required manual testing steps
+- State when automated coverage is absent, incomplete, not run, or uncertain
 - Maintain correct semantic versioning
 
 This document is authoritative. If user instructions conflict with these rules, Codex must follow this document unless the user explicitly instructs otherwise.
@@ -25,18 +27,25 @@ This document is authoritative. If user instructions conflict with these rules, 
 Codex is operating:
 
 - With full read/write access to this repository
-- Without automated tests
-- Without npm scripts
-- Without external linting tools (beyond what Codex may internally apply)
 - In a JavaScript-only Manifest V3 extension environment
+- With automated testing infrastructure that may be absent, partial, or actively evolving
+- Without assuming that a test command, test framework, browser harness, linter, or build system exists unless it is present in the checked-out repository
 
 The extension:
 - Runs entirely locally
 - Uses a background service worker
 - Uses `chrome.tabs`, `chrome.tabGroups`, `chrome.storage`
-- Stores settings in `chrome.storage.sync`
+- Stores functional settings in `chrome.storage.sync`, except for the documented appearance-preference exception
 
-Testing is entirely manual.
+Before making or validating a change, Codex must inspect the repository for the testing capabilities that actually exist at that time, including as applicable:
+
+- `package.json` scripts
+- Test configuration files
+- Test directories and fixtures
+- GitHub Actions workflows
+- Repository documentation describing test scope
+
+Codex must never claim that a scenario is covered by automation merely because a test framework is installed or a broadly named test suite passes. Coverage exists only when a relevant test explicitly exercises the behavior in question.
 
 ---
 
@@ -139,6 +148,7 @@ Use for:
 - Bug fixes
 - Refactors with no functional change
 - Minor internal improvements
+- Documentation, testing, and developer-workflow changes that do not alter extension behavior
 
 ### Minor — `0.X.0`
 Use for:
@@ -169,7 +179,10 @@ When making changes, Codex must:
 2. Keep changes minimal and localized.
 3. Avoid unnecessary refactors.
 4. Preserve existing structure unless explicitly instructed.
-5. Avoid introducing new dependencies.
+5. Avoid introducing new dependencies unless the requested work requires them.
+6. Inspect the current automated-testing capabilities before deciding how the change can be validated.
+7. Run the relevant available automated tests when practical.
+8. Define the manual verification still required after automation.
 
 If a change affects:
 - Grouping logic
@@ -182,52 +195,150 @@ Codex must explicitly flag this as **high-risk** in its explanation.
 
 ---
 
+## Automated Testing Roadmap and Transitional Rules
+
+Automated testing is an intentional roadmap item for SumTabs. The repository may move gradually from entirely manual verification to a mixture of unit, integration, browser, accessibility, and end-to-end tests.
+
+During this transition, Codex must treat the available automated test suite as evolving and potentially incomplete.
+
+### When Automated Tests Exist
+
+Codex must:
+
+- Run the tests relevant to the changed behavior when the environment permits.
+- Report the exact commands run and whether they passed, failed, or could not be executed.
+- Identify which changed behaviors the tests actually exercise.
+- Preserve existing tests and fixtures unless a deliberate change is required.
+- Never delete, skip, weaken, or rewrite a meaningful assertion solely to make a change pass.
+- Add or update a regression test for a bug fix when a suitable test harness already exists and doing so is proportionate to the change.
+
+A passing test suite does not remove the manual-testing requirements below.
+
+### When Automated Tests Do Not Exist or Are Incomplete
+
+Codex must:
+
+- Continue with the requested implementation unless the user specifically requires test infrastructure first.
+- Provide specific manual testing steps for the uncovered behavior.
+- Identify useful future automated-test candidates when relevant.
+- Avoid claiming coverage for neighboring or similar behavior that is not explicitly tested.
+
+### When Coverage Is Uncertain
+
+If Codex cannot confidently determine whether a changed behavior is covered by the current tests, it must:
+
+1. State that automated coverage is **uncertain**.
+2. Explain what was inspected and why coverage could not be confirmed.
+3. Include the scenario in the manual testing checklist.
+4. Avoid treating a general test-suite pass as proof that the scenario works.
+
+Uncertainty must be disclosed; it must not be silently resolved through assumption.
+
+### Introducing or Expanding Test Infrastructure
+
+Adding an automated test framework, test dependencies, npm scripts, fixtures, browser automation, or CI workflows is permitted when:
+
+- The user explicitly requests testing work; or
+- The agreed implementation plan includes that testing work.
+
+Codex must keep test infrastructure separate from the shipped extension wherever practical. Development-only tooling must not introduce runtime network calls, telemetry, remote code, or unnecessary production dependencies.
+
+Adding test tooling does not automatically authorize a production build system, TypeScript migration, bundler, or broad architectural rewrite.
+
+---
+
 ## Manual Testing Requirements (CRITICAL)
 
-Because there are no automated tests, Codex must always include a **Manual Testing Checklist** in its response.
+Manual testing remains required because automated coverage may be partial and because some Chromium-extension behavior, visual presentation, accessibility, browser integration, and human usability cannot be established solely by unit tests.
 
-The checklist must:
+Every implementation response must include a **Manual Testing Checklist**, except for changes that affect documentation only. For documentation-only changes, Codex must instead state that no extension runtime behavior changed and describe the documentation review performed.
 
-- Be specific
-- Be step-based
-- Focus on regression-prone areas
-- Call out edge cases
+The manual checklist must:
 
-At minimum, manual testing must verify:
+- Be specific and step-based.
+- Focus on the behavior changed and the regression-prone areas it could affect.
+- Distinguish between tests already covered by automation and checks that still require human verification.
+- Include any behavior whose automated coverage is uncertain.
+- Call out edge cases and browser-specific behavior.
+- Avoid asserting that the user performed the checklist unless the user actually reports doing so.
 
-### Core Behavior
-- Two HTTP(S) tabs with same domain → group created
-- Single tab alone → no group
+### Always Test by Hand When Applicable
+
+The following require manual verification when affected by the change, even if some automated coverage exists:
+
+- User-visible layout, visual hierarchy, text wrapping, themes, focus indicators, and responsive behavior
+- Keyboard navigation and practical accessibility behavior
+- Screen-reader announcements and interaction flow when accessibility semantics change
+- Browser-extension popup and settings behavior in a real supported Chromium browser
+- Permission prompts or manifest changes
+- Destructive actions and confirmation language
+- Behavior involving user-created tab groups
+- Any browser-specific behavior not exercised by the available automated browser suite
+- Any scenario for which automated coverage is uncertain
+
+### Core Behavior Regression Checks
+
+For changes touching grouping, event handling, tabs, windows, or enforcement, manually verify as applicable:
+
+- Two HTTP(S) tabs with the same grouping identity → managed group created
+- Single tab alone → no managed group created
 - Tabs in different windows → no cross-window grouping
+- User-created groups remain unmanaged and are not reorganized by SumTabs
 
 ### Protocol Filtering
+
+For changes touching URL parsing, tab eligibility, or event handling, manually verify as applicable:
+
 - `chrome://` pages ignored
 - `file://` pages ignored
 - `about:blank` ignored
+- Other non-HTTP(S) URLs ignored
 
 ### Pinned Tabs
-- Pinned tabs never grouped
-- Pinned tabs unaffected by collapse
+
+For changes touching grouping, movement, collapse, cleanup, or tab lifecycle behavior, manually verify:
+
+- Pinned tabs are never grouped or moved by SumTabs
+- Pinned tabs are not removed from groups by SumTabs
+- Pinned tabs are unaffected by collapse behavior
 
 ### Strict Membership
-- Changing a tab’s URL removes it from incorrect group
+
+For changes touching navigation or group enforcement, manually verify:
+
+- Changing a tab’s URL removes it from an incorrect managed group
 - Navigating between domains re-evaluates grouping
+- Tabs in user-created groups are not commandeered during navigation
 
-### Collapse Behavior (if applicable)
-- Collapse setting respected
-- Non-managed groups not improperly modified
+### Collapse Behavior
 
-If a change touches storage:
+For changes touching group focus or collapse behavior, manually verify:
+
+- The collapse setting is respected
+- Non-managed groups are not improperly modified
+- Pinned tabs are not affected
+
+### Storage and Settings
+
+For changes touching storage, settings, defaults, migration, or UI persistence, manually verify:
+
 - Existing settings persist
-- No reset occurs
-- No schema corruption
+- No unexpected reset occurs
+- No schema corruption occurs
+- Save, cancel, reset, and unsaved-change behavior remain correct where applicable
+- Appearance storage continues to obey the narrow local-storage exception
 
-If a change touches identity computation:
+### Identity Computation
+
+For changes touching domain identity or precedence, manually verify as applicable:
+
 - Custom suffix overrides still function
-- Excluded hostnames still respected
-- Domain bundles still respected
+- Exact-host separation rules still function
+- Domain-wide separation rules still function
+- Custom bundles still function
+- Path-scoped bundle rules and precedence still function
 
-Codex must highlight which of these areas require special scrutiny based on the specific change.
+Codex must highlight which manual areas require special scrutiny for the specific change. It must not mechanically include unrelated steps merely to make the checklist appear complete.
 
 ---
 
@@ -278,8 +389,7 @@ Any permission change must be explicitly justified in the response.
 
 Codex must not:
 
-- Add automated test frameworks
-- Add build systems
+- Add a production build system merely because test tooling is introduced
 - Introduce TypeScript
 - Perform broad stylistic rewrites
 - Change the managed prefix
@@ -299,22 +409,34 @@ When Codex completes a modification, it must include:
 2. Risk Level (Low / Medium / High)
 3. Version Increment Justification
 4. Files Modified
-5. Manual Testing Checklist (required)
-6. Any Areas Requiring Extra Scrutiny
+5. Automated Tests
+   - Commands run and results
+   - Behaviors explicitly covered
+   - Tests not run or unavailable
+   - Coverage uncertainties
+6. Manual Testing Checklist, or documentation review for documentation-only changes
+7. Any Areas Requiring Extra Scrutiny
+
+Codex must not use “all tests passed” as a substitute for identifying what those tests cover.
 
 ---
 
 ## Failure Modes to Avoid
 
-Common regression risks include:
+Common regression and process risks include:
 
 - Accidentally grouping pinned tabs
 - Grouping single tabs
 - Acting on unsupported protocols
 - Breaking strict membership enforcement
+- Modifying user-created groups
 - Causing infinite tab event loops
 - Forgetting to bump version
 - Altering or removing the `∑ ` prefix
+- Claiming automated coverage without locating a relevant test
+- Omitting manual checks because a general test suite passed
+- Hiding uncertainty about whether a scenario is tested
+- Weakening tests to accommodate an incorrect implementation
 
 Codex must actively guard against these.
 
