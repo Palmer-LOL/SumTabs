@@ -30,16 +30,45 @@ function arrayToLines(values) {
     return (values || []).join("\n");
 }
 
+function normalizeHostname(hostname) {
+    const candidate = String(hostname ?? "").trim().toLowerCase();
+    if (!candidate) return { valid: false, error: "Hostname is required." };
+    if (/^(?:https?|ftp)\//i.test(candidate)) {
+        return { valid: false, error: "The protocol appears to be malformed." };
+    }
+    if (/[\s/@?#%*]/.test(candidate)) {
+        return { valid: false, error: "Hostname contains unsupported characters." };
+    }
+    if (candidate.includes(":") && !(candidate.startsWith("[") && candidate.endsWith("]"))) {
+        return { valid: false, error: "Ports are not supported." };
+    }
+
+    try {
+        const parsedUrl = new URL(`http://${candidate}`);
+        if (!parsedUrl.hostname || parsedUrl.pathname !== "/" || parsedUrl.search || parsedUrl.hash) {
+            return { valid: false, error: "Hostname is not valid." };
+        }
+        return { valid: true, hostname: parsedUrl.hostname.toLowerCase() };
+    } catch {
+        return { valid: false, error: "Hostname is not valid." };
+    }
+}
+
 function canonicalizeDomainEntry(rawEntry) {
     const parsed = parseCustomDomainRule(rawEntry);
     if (!parsed.valid) return { valid: false, raw: parsed.raw, error: parsed.error };
 
+    const normalizedHostname = normalizeHostname(parsed.hostname);
+    if (!normalizedHostname.valid) {
+        return { valid: false, raw: parsed.raw, error: normalizedHostname.error };
+    }
+
     return {
         valid: true,
         canonicalEntry: parsed.pathPrefix
-            ? `${parsed.hostname}${parsed.pathPrefix}`
-            : parsed.hostname,
-        hostname: parsed.hostname,
+            ? `${normalizedHostname.hostname}${parsed.pathPrefix}`
+            : normalizedHostname.hostname,
+        hostname: normalizedHostname.hostname,
         pathPrefix: parsed.pathPrefix,
     };
 }
