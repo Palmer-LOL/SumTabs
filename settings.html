@@ -3,8 +3,11 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
   <title>SumTabs Settings</title>
+  <script src="theme.js"></script>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="theme.css">
 </head>
 <body class="page settings">
   <div class="settings__shell">
@@ -14,6 +17,47 @@
     </header>
 
     <main class="settings__sections">
+      <details class="disclosure-card settings__section" open>
+        <summary class="disclosure-card__summary">
+          <span>
+            <span class="settings__section-title">Appearance</span>
+            <span class="settings__section-summary">Follow the system theme or choose a local light or dark preference.</span>
+          </span>
+        </summary>
+        <div class="disclosure-card__content settings__section-content">
+          <fieldset class="theme-picker" aria-describedby="themePreferenceHelp themePreferenceStatus">
+            <legend class="theme-picker__legend">Theme</legend>
+            <div class="theme-picker__options">
+              <label class="theme-option">
+                <input class="theme-option__input" type="radio" name="themePreference" value="system">
+                <span class="theme-option__copy">
+                  <span class="theme-option__title">System</span>
+                  <span class="theme-option__description">Match the operating system and update automatically when it changes.</span>
+                </span>
+              </label>
+
+              <label class="theme-option">
+                <input class="theme-option__input" type="radio" name="themePreference" value="light">
+                <span class="theme-option__copy">
+                  <span class="theme-option__title">Light</span>
+                  <span class="theme-option__description">Always use the light SumTabs interface on this browser profile.</span>
+                </span>
+              </label>
+
+              <label class="theme-option">
+                <input class="theme-option__input" type="radio" name="themePreference" value="dark">
+                <span class="theme-option__copy">
+                  <span class="theme-option__title">Dark</span>
+                  <span class="theme-option__description">Always use the dark SumTabs interface on this browser profile.</span>
+                </span>
+              </label>
+            </div>
+            <div class="settings__help-text" id="themePreferenceHelp">Appearance changes apply immediately and are stored only in this browser profile. They are not included in the Save changes workflow.</div>
+            <div class="theme-picker__status" id="themePreferenceStatus" role="status" aria-live="polite"></div>
+          </fieldset>
+        </div>
+      </details>
+
       <details class="disclosure-card settings__section" open>
         <summary class="disclosure-card__summary">
           <span>
@@ -185,7 +229,7 @@
         </summary>
         <div class="disclosure-card__content settings__section-content settings__privacy-copy">
           <p><strong>Tab access:</strong> SumTabs needs access to tab URLs in order to group tabs by domain. All URL processing happens locally inside your browser. No tab data is transmitted anywhere.</p>
-          <p><strong>Storage:</strong> SumTabs stores its settings using Chrome’s extension storage. If browser sync is enabled, these settings may sync across your devices as part of your browser profile. Otherwise, they remain local to this device.</p>
+          <p><strong>Storage:</strong> SumTabs stores grouping settings using Chrome’s extension storage. If browser sync is enabled, those settings may sync across your devices as part of your browser profile. The appearance preference is stored separately in this browser profile and does not sync.</p>
           <p>The extension does not send data to any external server and does not include analytics, telemetry, or remote code. The source code is available for review.</p>
         </div>
       </details>
