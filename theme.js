@@ -79,7 +79,7 @@
     }
   }
 
-  const initialPreference = applyPreference(getPreference());
+  applyPreference(getPreference());
 
   window.SumTabsTheme = {
     getPreference,
@@ -110,7 +110,4 @@
     const preference = applyPreference(getPreference());
     updateSettingsControls(preference);
   });
-
-  // Keep the initial preference referenced so aggressive minifiers do not discard the call.
-  void initialPreference;
 })();
