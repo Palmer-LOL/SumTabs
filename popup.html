@@ -39,6 +39,16 @@
       <div class="settings__small-text" id="domainActionStatus"></div>
       <button class="button button--full-width" id="toggleDomainAction" type="button">Add rule</button>
     </div>
+
+    <div class="popup__status-row" id="bundleActionRow">
+      <label class="popup__status-value" for="bundleSelect">Add the active hostname to custom domain bundle:</label>
+      <select class="popup__select" id="bundleSelect"></select>
+      <div class="settings__small-text" id="bundleActionStatus"></div>
+      <div class="popup__button-row">
+        <button class="button" id="applyBundleAction" type="button">Apply</button>
+        <button class="button" id="manageBundles" type="button">Manage bundles</button>
+      </div>
+    </div>
   </div>
 
   <button class="button button--full-width" id="forceReevaluate" type="button">Reevaluate open tabs now</button>

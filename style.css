@@ -112,6 +112,18 @@
   padding: 6px;
 }
 
+.popup__select {
+  width: 100%;
+  padding: 6px;
+}
+
+.popup__button-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-sm);
+  margin-top: 6px;
+}
+
 .bundle-editor__row {
   margin: 14px 0;
 }
@@ -202,6 +214,10 @@
 
 #quickActionsCard .button--full-width {
   margin: 6px 0 0;
+}
+
+#quickActionsCard .popup__button-row .button {
+  width: 100%;
 }
 
 #openSettings.button--full-width {
