@@ -1,5 +1,5 @@
 import { DEFAULTS } from "./defaults.js";
-import { buildCustomBundleMaps, getDomainWideSeparationRule, resolveGroupingForHostname } from "./grouping.js";
+import { buildCustomBundleMaps, getCustomDomainBundleEntryOwners, getDomainWideSeparationRule, resolveGroupingForHostname } from "./grouping.js";
 
 const activeHostnameEl = document.getElementById("activeHostname");
 const groupingTargetEl = document.getElementById("groupingTarget");
@@ -17,7 +17,7 @@ const bundleActionRowEl = document.getElementById("bundleActionRow");
 const bundleSelectEl = document.getElementById("bundleSelect");
 const bundleActionStatusEl = document.getElementById("bundleActionStatus");
 const applyBundleActionButton = document.getElementById("applyBundleAction");
-const manageBundlesButton = document.getElementById("manageBundles");
+const removeBundleActionButton = document.getElementById("removeBundleAction");
 const closeAllInWindowButton = document.getElementById("closeAllInWindow");
 const forceReevaluateButton = document.getElementById("forceReevaluate");
 
@@ -156,25 +156,37 @@ function renderBundleAction(context) {
     });
 
     const hasBundles = bundles.length > 0;
-    const isAlreadyInSelectedBundle = hasBundles && context.bundleMembershipByIndex.has(0);
     bundleSelectEl.disabled = !hasBundles || quickActionInFlight;
-    applyBundleActionButton.disabled = !hasBundles || isAlreadyInSelectedBundle || quickActionInFlight;
-    bundleActionStatusEl.textContent = hasBundles
-        ? (isAlreadyInSelectedBundle
-            ? `${context.hostname} is already in this bundle.`
-            : `Choose a bundle, then add ${context.hostname}.`)
-        : "No custom bundles exist yet. Use Manage bundles to create one.";
+    updateBundleSelectionStatus();
+}
+
+function getBundleOwnershipLabel(owners) {
+    return owners
+        .map((owner) => owner.title || `Untitled bundle ${owner.groupIndex + 1}`)
+        .join(", ");
 }
 
 function updateBundleSelectionStatus() {
     if (!quickActionContext) return;
 
+    const hasBundles = quickActionContext.customDomainGroups.length > 0;
     const selectedIndex = Number(bundleSelectEl.value);
     const isAlreadyInSelectedBundle = quickActionContext.bundleMembershipByIndex.has(selectedIndex);
-    applyBundleActionButton.disabled = isAlreadyInSelectedBundle || quickActionInFlight;
-    bundleActionStatusEl.textContent = isAlreadyInSelectedBundle
-        ? `${quickActionContext.hostname} is already in this bundle.`
-        : `Add ${quickActionContext.hostname} to ${normalizeBundleTitle(quickActionContext.customDomainGroups[selectedIndex], selectedIndex)}.`;
+    const isInAnyBundle = quickActionContext.bundleOwners.length > 0;
+    const isOnlyInSelectedBundle = isAlreadyInSelectedBundle && quickActionContext.bundleOwners.every((owner) => owner.groupIndex === selectedIndex);
+
+    applyBundleActionButton.disabled = !hasBundles || isAlreadyInSelectedBundle || isInAnyBundle || quickActionInFlight;
+    removeBundleActionButton.disabled = !hasBundles || !isAlreadyInSelectedBundle || quickActionInFlight;
+
+    if (!hasBundles) {
+        bundleActionStatusEl.textContent = "No custom bundles exist yet. Open Settings to create one.";
+    } else if (isOnlyInSelectedBundle) {
+        bundleActionStatusEl.textContent = `${quickActionContext.hostname} is already in this bundle. Use Remove to take it out.`;
+    } else if (isInAnyBundle) {
+        bundleActionStatusEl.textContent = `${quickActionContext.hostname} is already in ${getBundleOwnershipLabel(quickActionContext.bundleOwners)}. Remove it there before adding it to another bundle.`;
+    } else {
+        bundleActionStatusEl.textContent = `Add ${quickActionContext.hostname} to ${normalizeBundleTitle(quickActionContext.customDomainGroups[selectedIndex], selectedIndex)}.`;
+    }
 }
 
 async function updateSyncList(key, updateList) {
@@ -208,7 +220,7 @@ async function toggleExactAction() {
     }
 }
 
-async function addHostnameToSelectedBundle() {
+async function updateSelectedBundleMembership({ shouldAdd }) {
     if (!quickActionContext) return;
 
     const selectedIndex = Number(bundleSelectEl.value);
@@ -223,22 +235,38 @@ async function addHostnameToSelectedBundle() {
         const selectedGroup = customDomainGroups[selectedIndex];
         if (!selectedGroup) return;
 
+        const latestOwners = getCustomDomainBundleEntryOwners(customDomainGroups, quickActionContext.hostname);
+        const latestSelectedOwners = latestOwners.filter((owner) => owner.groupIndex === selectedIndex);
+
+        if (shouldAdd && latestOwners.length > 0) return;
+        if (!shouldAdd && latestSelectedOwners.length === 0) return;
+
         const currentDomains = Array.isArray(selectedGroup.domains) ? selectedGroup.domains : [];
         const normalizedDomains = normalizeLowerArray(currentDomains);
-        if (!normalizedDomains.includes(quickActionContext.hostname)) {
-            customDomainGroups[selectedIndex] = {
-                ...selectedGroup,
-                domains: [...normalizedDomains, quickActionContext.hostname],
-            };
-            await chrome.storage.sync.set({ customDomainGroups });
-            await chrome.runtime.sendMessage({ type: "sumtabs:force-reevaluate" });
-        }
+        const nextDomains = shouldAdd
+            ? [...normalizedDomains, quickActionContext.hostname]
+            : normalizedDomains.filter((domain) => domain !== quickActionContext.hostname);
+
+        customDomainGroups[selectedIndex] = {
+            ...selectedGroup,
+            domains: nextDomains,
+        };
+        await chrome.storage.sync.set({ customDomainGroups });
+        await chrome.runtime.sendMessage({ type: "sumtabs:force-reevaluate" });
 
         await renderActiveTabStatus();
     } finally {
         quickActionInFlight = false;
         renderQuickActions(quickActionContext);
     }
+}
+
+async function addHostnameToSelectedBundle() {
+    return updateSelectedBundleMembership({ shouldAdd: true });
+}
+
+async function removeHostnameFromSelectedBundle() {
+    return updateSelectedBundleMembership({ shouldAdd: false });
 }
 
 async function toggleDomainAction() {
@@ -338,11 +366,8 @@ async function renderActiveTabStatus() {
     });
 
     const customDomainGroups = Array.isArray(settings.customDomainGroups) ? settings.customDomainGroups : [];
-    const bundleMembershipByIndex = new Set();
-    customDomainGroups.forEach((group, index) => {
-        const domains = normalizeLowerList(Array.isArray(group?.domains) ? group.domains : []);
-        if (domains.has(grouping.hostname)) bundleMembershipByIndex.add(index);
-    });
+    const bundleOwners = getCustomDomainBundleEntryOwners(customDomainGroups, grouping.hostname);
+    const bundleMembershipByIndex = new Set(bundleOwners.map((owner) => owner.groupIndex));
 
     renderQuickActions({
         hostname: grouping.hostname,
@@ -354,6 +379,7 @@ async function renderActiveTabStatus() {
         domainActionToken: domainAction?.token ?? "",
         customDomainGroups,
         bundleMembershipByIndex,
+        bundleOwners,
     });
 }
 
@@ -382,9 +408,10 @@ applyBundleActionButton.addEventListener("click", () => {
     });
 });
 
-manageBundlesButton.addEventListener("click", async () => {
-    await chrome.runtime.openOptionsPage();
-    window.close();
+removeBundleActionButton.addEventListener("click", () => {
+    removeHostnameFromSelectedBundle().catch((error) => {
+        console.error("Failed to remove hostname from custom domain bundle", error);
+    });
 });
 
 forceReevaluateButton?.addEventListener("click", async () => {
