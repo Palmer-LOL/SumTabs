@@ -13,11 +13,20 @@ const domainActionRowEl = document.getElementById("domainActionRow");
 const domainActionLabelEl = document.getElementById("domainActionLabel");
 const domainActionStatusEl = document.getElementById("domainActionStatus");
 const toggleDomainActionButton = document.getElementById("toggleDomainAction");
+const bundleActionRowEl = document.getElementById("bundleActionRow");
+const bundleSelectEl = document.getElementById("bundleSelect");
+const bundleActionStatusEl = document.getElementById("bundleActionStatus");
+const applyBundleActionButton = document.getElementById("applyBundleAction");
+const manageBundlesButton = document.getElementById("manageBundles");
 const closeAllInWindowButton = document.getElementById("closeAllInWindow");
 const forceReevaluateButton = document.getElementById("forceReevaluate");
 
 let quickActionContext = null;
 let quickActionInFlight = false;
+
+function normalizeBundleTitle(group, index) {
+    return String(group?.title ?? "").trim() || `Untitled bundle ${index + 1}`;
+}
 
 function normalizeLowerList(values) {
     return new Set(Array.from(values ?? []).map((value) => String(value ?? "").trim().toLowerCase()).filter(Boolean));
@@ -94,6 +103,7 @@ function renderQuickActions(context) {
         quickActionsCardEl.hidden = true;
         exactActionRowEl.hidden = true;
         domainActionRowEl.hidden = true;
+        bundleActionRowEl.hidden = true;
         return;
     }
 
@@ -129,6 +139,42 @@ function renderQuickActions(context) {
         buttonText: context.domainActionEnabled ? "Remove rule" : "Add rule",
         hidden: !context.domainActionAvailable,
     });
+
+    renderBundleAction(context);
+}
+
+function renderBundleAction(context) {
+    bundleActionRowEl.hidden = false;
+    bundleSelectEl.innerHTML = "";
+
+    const bundles = context.customDomainGroups;
+    bundles.forEach((group, index) => {
+        const option = document.createElement("option");
+        option.value = String(index);
+        option.textContent = normalizeBundleTitle(group, index);
+        bundleSelectEl.appendChild(option);
+    });
+
+    const hasBundles = bundles.length > 0;
+    const isAlreadyInSelectedBundle = hasBundles && context.bundleMembershipByIndex.has(0);
+    bundleSelectEl.disabled = !hasBundles || quickActionInFlight;
+    applyBundleActionButton.disabled = !hasBundles || isAlreadyInSelectedBundle || quickActionInFlight;
+    bundleActionStatusEl.textContent = hasBundles
+        ? (isAlreadyInSelectedBundle
+            ? `${context.hostname} is already in this bundle.`
+            : `Choose a bundle, then add ${context.hostname}.`)
+        : "No custom bundles exist yet. Use Manage bundles to create one.";
+}
+
+function updateBundleSelectionStatus() {
+    if (!quickActionContext) return;
+
+    const selectedIndex = Number(bundleSelectEl.value);
+    const isAlreadyInSelectedBundle = quickActionContext.bundleMembershipByIndex.has(selectedIndex);
+    applyBundleActionButton.disabled = isAlreadyInSelectedBundle || quickActionInFlight;
+    bundleActionStatusEl.textContent = isAlreadyInSelectedBundle
+        ? `${quickActionContext.hostname} is already in this bundle.`
+        : `Add ${quickActionContext.hostname} to ${normalizeBundleTitle(quickActionContext.customDomainGroups[selectedIndex], selectedIndex)}.`;
 }
 
 async function updateSyncList(key, updateList) {
@@ -154,6 +200,39 @@ async function toggleExactAction() {
             }
             return nextValues;
         });
+
+        await renderActiveTabStatus();
+    } finally {
+        quickActionInFlight = false;
+        renderQuickActions(quickActionContext);
+    }
+}
+
+async function addHostnameToSelectedBundle() {
+    if (!quickActionContext) return;
+
+    const selectedIndex = Number(bundleSelectEl.value);
+    if (!Number.isInteger(selectedIndex) || selectedIndex < 0) return;
+
+    quickActionInFlight = true;
+    renderQuickActions(quickActionContext);
+
+    try {
+        const stored = await chrome.storage.sync.get(DEFAULTS);
+        const customDomainGroups = Array.isArray(stored.customDomainGroups) ? stored.customDomainGroups : [];
+        const selectedGroup = customDomainGroups[selectedIndex];
+        if (!selectedGroup) return;
+
+        const currentDomains = Array.isArray(selectedGroup.domains) ? selectedGroup.domains : [];
+        const normalizedDomains = normalizeLowerArray(currentDomains);
+        if (!normalizedDomains.includes(quickActionContext.hostname)) {
+            customDomainGroups[selectedIndex] = {
+                ...selectedGroup,
+                domains: [...normalizedDomains, quickActionContext.hostname],
+            };
+            await chrome.storage.sync.set({ customDomainGroups });
+            await chrome.runtime.sendMessage({ type: "sumtabs:force-reevaluate" });
+        }
 
         await renderActiveTabStatus();
     } finally {
@@ -258,6 +337,13 @@ async function renderActiveTabStatus() {
         explanation: getExplanation(activeTab, grouping),
     });
 
+    const customDomainGroups = Array.isArray(settings.customDomainGroups) ? settings.customDomainGroups : [];
+    const bundleMembershipByIndex = new Set();
+    customDomainGroups.forEach((group, index) => {
+        const domains = normalizeLowerList(Array.isArray(group?.domains) ? group.domains : []);
+        if (domains.has(grouping.hostname)) bundleMembershipByIndex.add(index);
+    });
+
     renderQuickActions({
         hostname: grouping.hostname,
         exactActionEnabled: excludedFromRootCollapse.has(grouping.hostname),
@@ -266,6 +352,8 @@ async function renderActiveTabStatus() {
         domainActionAffectsCurrentTab: domainAction?.affectsHostname ?? false,
         domainActionLabel: domainAction?.label ?? "",
         domainActionToken: domainAction?.token ?? "",
+        customDomainGroups,
+        bundleMembershipByIndex,
     });
 }
 
@@ -286,6 +374,18 @@ toggleDomainActionButton.addEventListener("click", () => {
     });
 });
 
+bundleSelectEl.addEventListener("change", updateBundleSelectionStatus);
+
+applyBundleActionButton.addEventListener("click", () => {
+    addHostnameToSelectedBundle().catch((error) => {
+        console.error("Failed to add hostname to custom domain bundle", error);
+    });
+});
+
+manageBundlesButton.addEventListener("click", async () => {
+    await chrome.runtime.openOptionsPage();
+    window.close();
+});
 
 forceReevaluateButton?.addEventListener("click", async () => {
     if (!forceReevaluateButton) return;
