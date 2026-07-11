@@ -247,6 +247,19 @@ If a schema change is required:
 - Codex must describe migration behavior explicitly
 - Codex must flag manual verification steps
 
+### Appearance Preference Exception (Intentional)
+
+The SumTabs appearance preference is explicitly exempt from the general `chrome.storage.sync` requirement.
+
+The single key `sumtabs.themePreference` MAY be stored in extension-origin `localStorage`, subject to all of the following constraints:
+
+- The effective preference may be only `system`, `light`, or `dark`; the implementation may represent `system` by removing the key entirely.
+- It controls presentation only and must never affect tab grouping, enforcement, domain rules, bundles, permissions, or other extension behavior.
+- No other setting or user data may be moved to `localStorage` under this exception.
+- All functional and grouping-related settings must continue to use `chrome.storage.sync`.
+
+This exception is intentional because appearance is device-local UI state that should not be synchronized across computers, and synchronous `localStorage` access allows the theme to be applied before styles render, avoiding a visible light-theme flash on extension pages. Codex and automated reviewers must treat this narrowly scoped use of `localStorage` as contract-compliant.
+
 ---
 
 ## Manifest and Permission Rules
