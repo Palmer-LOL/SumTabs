@@ -1,140 +1,207 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>SumTabs Settings</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body class="page settings">
-  <h1>SumTabs Settings</h1>
+  <div class="settings__shell">
+    <header class="settings__header">
+      <h1 class="settings__title">SumTabs Settings</h1>
+      <p class="settings__intro">Configure how SumTabs groups and organizes tabs. Changes are applied only after you select <strong>Save changes</strong>.</p>
+    </header>
 
-  <div class="settings__row">
-    <label class="settings__field-label" for="minTabsToGroup">Group when at least this many matching tabs exist</label>
-    <input class="input-text" id="minTabsToGroup" type="number" min="2" step="1">
-    <div class="settings__small-text">Minimum is 2. Higher values delay grouping until more matching tabs are open in the same window.</div>
+    <main class="settings__sections">
+      <details class="disclosure-card settings__section" open>
+        <summary class="disclosure-card__summary">
+          <span>
+            <span class="settings__section-title">Grouping behavior</span>
+            <span class="settings__section-summary">Choose when groups form and how managed groups behave.</span>
+          </span>
+        </summary>
+        <div class="disclosure-card__content settings__section-content">
+          <div class="settings__row">
+            <label class="settings__field-label" for="minTabsToGroup">Group when at least this many matching tabs exist</label>
+            <input class="input-text input-text--number" id="minTabsToGroup" type="number" min="2" step="1" aria-describedby="minTabsToGroupHelp minTabsToGroupValidation">
+            <div class="settings__help-text" id="minTabsToGroupHelp">Minimum is 2. Higher values delay grouping until more matching tabs are open in the same window.</div>
+            <div class="validation-message" id="minTabsToGroupValidation" role="status"></div>
+          </div>
+
+          <div class="settings__row settings__choice-row">
+            <label class="settings__field-label checkbox-field">
+              <input class="checkbox-field__input" id="collapseOtherGroupsOnNavEvents" type="checkbox" aria-describedby="collapseOtherGroupsHelp">
+              <span>Focus the active group when tabs change</span>
+            </label>
+            <div class="settings__help-text" id="collapseOtherGroupsHelp">Collapse other managed groups when a tab is opened or navigates to another site. Turn this off if you regularly work across several groups.</div>
+          </div>
+
+          <div class="settings__row settings__choice-row">
+            <label class="settings__field-label checkbox-field">
+              <input class="checkbox-field__input" id="keepManagedGroupsAtFront" type="checkbox" aria-describedby="keepManagedGroupsHelp">
+              <span>Keep managed tab groups at the front</span>
+            </label>
+            <div class="settings__help-text" id="keepManagedGroupsHelp">Managed groups are placed after pinned tabs, preserving pinned tabs at the very front.</div>
+          </div>
+
+          <div class="settings__row settings__choice-row">
+            <label class="settings__field-label checkbox-field">
+              <input class="checkbox-field__input" id="ungroupSingletonManagedGroups" type="checkbox" aria-describedby="ungroupSingletonHelp">
+              <span>Ungroup managed groups when only one tab remains</span>
+            </label>
+            <div class="settings__help-text" id="ungroupSingletonHelp">Leave this off to keep single-tab managed groups grouped.</div>
+          </div>
+        </div>
+      </details>
+
+      <details class="disclosure-card settings__section">
+        <summary class="disclosure-card__summary">
+          <span>
+            <span class="settings__section-title">Site separation rules</span>
+            <span class="settings__section-summary">Keep selected hostnames or whole subdomain families in separate groups.</span>
+          </span>
+        </summary>
+        <div class="disclosure-card__content settings__section-content">
+          <div class="settings__row">
+            <label class="settings__field-label" for="commonMultipartSuffixes">Separate all subdomains for these domains</label>
+            <textarea class="textarea" id="commonMultipartSuffixes" aria-describedby="commonMultipartSuffixesHelp commonMultipartSuffixesValidation" spellcheck="false"></textarea>
+            <div class="settings__help-text" id="commonMultipartSuffixesHelp"><code>github.io</code> means every subdomain is treated as its own grouped site. Enter one domain per line.</div>
+            <div class="validation-message" id="commonMultipartSuffixesValidation" role="status"></div>
+          </div>
+
+          <div class="settings__row">
+            <label class="settings__field-label" for="excludedFromRootCollapse">Separate only these specific hostnames</label>
+            <textarea class="textarea" id="excludedFromRootCollapse" aria-describedby="excludedFromRootCollapseHelp excludedFromRootCollapseValidation" spellcheck="false"></textarea>
+            <div class="settings__help-text" id="excludedFromRootCollapseHelp"><code>drive.google.com</code> means only that hostname is separate, while other Google subdomains still group under <code>google.com</code>. Enter one hostname per line.</div>
+            <div class="validation-message" id="excludedFromRootCollapseValidation" role="status"></div>
+          </div>
+        </div>
+      </details>
+
+      <details class="disclosure-card settings__section" id="customBundlesSection">
+        <summary class="disclosure-card__summary">
+          <span>
+            <span class="settings__section-title">Custom bundles</span>
+            <span class="settings__section-summary">Group related sites together even when they use different domains.</span>
+          </span>
+        </summary>
+        <div class="disclosure-card__content settings__section-content">
+          <div class="bundle-editor__empty" id="bundleEmptyState" hidden>
+            <h2 class="bundle-editor__empty-title">No custom bundles yet</h2>
+            <p class="settings__help-text">Bundles let unrelated sites share one managed tab group.</p>
+            <button class="button button--primary" type="button" id="createFirstGroup">Create bundle</button>
+          </div>
+
+          <div id="bundleEditorInterface">
+            <div class="bundle-editor__toolbar">
+              <div class="bundle-editor__selector">
+                <label class="settings__field-label" for="customGroupSelect">Bundle to edit</label>
+                <select class="select-control" id="customGroupSelect"></select>
+              </div>
+              <button class="button" type="button" id="addGroup">New bundle</button>
+              <button class="button button--danger-secondary" type="button" id="removeGroup">Delete bundle</button>
+            </div>
+
+            <div class="bundle-editor" id="bundleEditorFields">
+              <div class="bundle-editor__row">
+                <label class="settings__field-label" for="groupTitle">Bundle title</label>
+                <input class="input-text" id="groupTitle" type="text" placeholder="e.g., News" aria-describedby="groupTitleValidation">
+                <div class="validation-message" id="groupTitleValidation" role="status"></div>
+              </div>
+
+              <div class="bundle-editor__row">
+                <label class="settings__field-label" for="groupDomains">Domain rules</label>
+                <textarea class="textarea" id="groupDomains" placeholder="nytimes.com&#10;chatgpt.com/codex" aria-describedby="groupDomainsHelp groupDomainsValidation" spellcheck="false"></textarea>
+                <div class="settings__help-text" id="groupDomainsHelp">Enter one rule per line. Path rules use prefix matching; a trailing <code>*</code> is optional.</div>
+                <div class="validation-message" id="groupDomainsValidation" role="status"></div>
+              </div>
+
+              <div class="bundle-editor__row bundle-editor__color-row">
+                <label class="settings__field-label" for="groupColor">Group color</label>
+                <select class="select-control" id="groupColor">
+                  <option value="">Browser default</option>
+                  <option value="grey">Grey</option>
+                  <option value="blue">Blue</option>
+                  <option value="red">Red</option>
+                  <option value="yellow">Yellow</option>
+                  <option value="green">Green</option>
+                  <option value="pink">Pink</option>
+                  <option value="purple">Purple</option>
+                  <option value="cyan">Cyan</option>
+                  <option value="orange">Orange</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <details class="settings__details" id="advancedJsonDetails">
+            <summary>Advanced: view or edit raw JSON</summary>
+            <div class="settings__details-content">
+              <textarea class="textarea textarea--json" id="customDomainGroupsJson" aria-describedby="customDomainGroupsJsonHelp customDomainGroupsJsonStatus" spellcheck="false"></textarea>
+              <div class="settings__help-text" id="customDomainGroupsJsonHelp">Format: <code>[{"title":"Chess","domains":["chess.com"],"color":"purple"}]</code></div>
+              <div class="validation-message" id="customDomainGroupsJsonStatus" role="status"></div>
+              <div class="settings__button-row">
+                <button class="button" type="button" id="applyCustomDomainGroupsJson">Apply JSON to editor</button>
+                <button class="button" type="button" id="resetCustomDomainGroupsJson">Discard JSON edits</button>
+              </div>
+            </div>
+          </details>
+        </div>
+      </details>
+
+      <details class="disclosure-card settings__section">
+        <summary class="disclosure-card__summary">
+          <span>
+            <span class="settings__section-title">Advanced behavior</span>
+            <span class="settings__section-summary">Control how temporary browser URLs are handled while tabs load.</span>
+          </span>
+        </summary>
+        <div class="disclosure-card__content settings__section-content">
+          <div class="settings__row settings__choice-row">
+            <label class="settings__field-label checkbox-field">
+              <input class="checkbox-field__input" id="ignoreInitialTabUrlForGrouping" type="checkbox" aria-describedby="ignoreInitialGroupingHelp">
+              <span>Ignore a tab’s initial URL when deciding its group</span>
+            </label>
+            <div class="settings__help-text" id="ignoreInitialGroupingHelp">Wait for a newly created tab to navigate away from temporary pages such as the new-tab page before assigning it to a group.</div>
+          </div>
+
+          <div class="settings__row settings__choice-row">
+            <label class="settings__field-label checkbox-field">
+              <input class="checkbox-field__input" id="ignoreInitialTabUrlForEnforcement" type="checkbox" aria-describedby="ignoreInitialEnforcementHelp">
+              <span>Ignore a tab’s initial URL when enforcing group placement</span>
+            </label>
+            <div class="settings__help-text" id="ignoreInitialEnforcementHelp">Avoid moving a newly created tab until its destination URL is available.</div>
+          </div>
+        </div>
+      </details>
+
+      <details class="disclosure-card settings__section settings__section--informational">
+        <summary class="disclosure-card__summary">
+          <span>
+            <span class="settings__section-title">Privacy and permissions</span>
+            <span class="settings__section-summary">What SumTabs can access and where its settings are stored.</span>
+          </span>
+        </summary>
+        <div class="disclosure-card__content settings__section-content settings__privacy-copy">
+          <p><strong>Tab access:</strong> SumTabs needs access to tab URLs in order to group tabs by domain. All URL processing happens locally inside your browser. No tab data is transmitted anywhere.</p>
+          <p><strong>Storage:</strong> SumTabs stores its settings using Chrome’s extension storage. If browser sync is enabled, these settings may sync across your devices as part of your browser profile. Otherwise, they remain local to this device.</p>
+          <p>The extension does not send data to any external server and does not include analytics, telemetry, or remote code. The source code is available for review.</p>
+        </div>
+      </details>
+    </main>
   </div>
 
-  <div class="settings__row">
-    <label class="settings__field-label checkbox-field">
-      <input class="checkbox-field__input" id="collapseOtherGroupsOnNavEvents" type="checkbox">
-      Collapse other groups when navigating/creating tabs
-    </label>
-    <div class="settings__small-text">Aggressive “focus mode.” Turn off if you work across groups.</div>
-  </div>
-
-  <div class="settings__row">
-    <label class="settings__field-label checkbox-field">
-      <input class="checkbox-field__input" id="keepManagedGroupsAtFront" type="checkbox">
-      Keep managed tab groups at the front
-    </label>
-    <div class="settings__small-text">Managed groups are placed after pinned tabs, preserving pinned tabs at the very front.</div>
-  </div>
-
-  <div class="settings__row">
-    <label class="settings__field-label checkbox-field">
-      <input class="checkbox-field__input" id="ignoreInitialTabUrlForGrouping" type="checkbox">
-      Ignore initial tab URL for grouping
-    </label>
-  </div>
-
-  <div class="settings__row">
-    <label class="settings__field-label checkbox-field">
-      <input class="checkbox-field__input" id="ignoreInitialTabUrlForEnforcement" type="checkbox">
-      Ignore initial tab URL for enforcement
-    </label>
-  </div>
-
-  <div class="settings__row">
-    <label class="settings__field-label checkbox-field">
-      <input class="checkbox-field__input" id="ungroupSingletonManagedGroups" type="checkbox">
-      Ungroup managed groups when only one tab remains
-    </label>
-    <div class="settings__small-text">Default is off: singleton managed groups remain grouped.</div>
-  </div>
-
-
-  <div class="settings__row">
-    <label class="settings__field-label" for="commonMultipartSuffixes">Separate all subdomains for these domains</label>
-    <textarea class="textarea" id="commonMultipartSuffixes"></textarea>
-    <div class="settings__small-text"><code>github.io</code> means every subdomain is treated as its own grouped site.</div>
-  </div>
-
-  <div class="settings__row">
-    <label class="settings__field-label" for="excludedFromRootCollapse">Separate only these specific subdomains</label>
-    <textarea class="textarea" id="excludedFromRootCollapse"></textarea>
-    <div class="settings__small-text"><code>drive.google.com</code> means only that hostname is separate, while other Google subdomains still group under <code>google.com</code>.</div>
-  </div>
-
-  <div class="settings__row">
-    <label class="settings__field-label">Custom domain bundles</label>
-
-    <div class="bundle-editor">
-      <div class="bundle-editor__toolbar">
-        <select class="bundle-editor__select" id="customGroupSelect"></select>
-        <button class="button" type="button" id="addGroup">New bundle</button>
-        <button class="button" type="button" id="removeGroup">Delete bundle</button>
-      </div>
-
-      <div class="bundle-editor__row">
-        <label class="settings__field-label" for="groupTitle">Bundle title</label>
-        <input class="input-text" id="groupTitle" type="text" placeholder="e.g., News">
-      </div>
-
-      <div class="bundle-editor__row">
-        <label class="settings__field-label" for="groupDomains">Domains (one per line)</label>
-        <textarea class="textarea" id="groupDomains" placeholder="nytimes.com&#10;chatgpt.com/codex"></textarea>
-        <div class="settings__small-text" id="groupDomainsValidation">All entries are valid.</div>
-      </div>
-
-      <div class="bundle-editor__row">
-        <label class="settings__field-label" for="groupColor">Group color</label>
-        <select class="bundle-editor__select" id="groupColor">
-          <option value="">Browser default</option>
-          <option value="grey">Grey</option>
-          <option value="blue">Blue</option>
-          <option value="red">Red</option>
-          <option value="yellow">Yellow</option>
-          <option value="green">Green</option>
-          <option value="pink">Pink</option>
-          <option value="purple">Purple</option>
-          <option value="cyan">Cyan</option>
-          <option value="orange">Orange</option>
-        </select>
+  <footer class="settings__action-bar" aria-label="Settings actions">
+    <div class="settings__action-bar-inner">
+      <div class="settings__save-status" id="status" role="status" aria-live="polite">No unsaved changes.</div>
+      <button class="button button--link" id="undoDelete" type="button" hidden>Undo deletion</button>
+      <div class="settings__action-buttons">
+        <button class="button button--danger-secondary" id="reset" type="button">Reset to defaults</button>
+        <button class="button button--primary" id="save" type="button" disabled>Save changes</button>
       </div>
     </div>
-
-    <div class="settings__small-text settings__details-note">
-      Each bundle has a title and a list of rules (one per line). Path rules are prefix-matched, and trailing <code>*</code> is optional. Example title: “AI”, rules: <code>chatgpt.com/codex</code>, <code>openai.com/research/*</code>
-    </div>
-
-    <details class="settings__details">
-      <summary class="settings__small-text">Advanced: view/edit raw JSON</summary>
-      <textarea class="textarea" id="customDomainGroupsJson"></textarea>
-      <div class="settings__small-text">Format: [{"title":"Chess","domains":["chess.com","chessly.com"],"color":"purple"}]</div>
-    </details>
-  </div>
-
-  <div class="settings__row">
-    <button class="button" id="save">Save</button>
-    <button class="button" id="reset">Reset to defaults</button>
-    <span class="settings__inline-status" id="status"></span>
-  </div>
-
-  <div class="settings__row">
-  <h2>Privacy & Permissions</h2>
-  <div class="settings__small-text">
-    <p><strong>Tab access:</strong> SumTabs needs access to tab URLs in order to group tabs by domain.
-    All URL processing happens locally inside your browser.
-    No tab data is transmitted anywhere.</p>
-
-    <p><strong>Storage:</strong> SumTabs stores its settings using Chrome’s extension storage.
-    If Chrome Sync is enabled in your browser, these settings may sync across your devices
-    as part of your browser profile. If Sync is disabled, settings remain local to this device.</p>
-
-    <p>The extension does not send data to any external server and does not include analytics,
-    telemetry, or remote code. The source code is available for review.</p>
-  </div>
-</div>
+  </footer>
 
   <script type="module" src="settings.js"></script>
 </body>
