@@ -18,6 +18,7 @@
 				class="popup__header-actions"
 				role="group"
 				aria-label="Popup controls"
+				aria-busy="false"
 			>
 				<button
 					class="icon-button icon-button--refresh"
@@ -37,6 +38,13 @@
 				</button>
 			</div>
 		</header>
+
+		<div
+			class="settings__small-text popup__feedback"
+			id="popupFeedback"
+			role="status"
+			aria-live="polite"
+		></div>
 
 		<main class="popup__sections">
 			<details class="popup__section" id="statusCard" open>
@@ -64,7 +72,12 @@
 				</div>
 			</details>
 
-			<details class="popup__section" id="quickActionsCard" hidden>
+			<details
+				class="popup__section"
+				id="quickActionsCard"
+				aria-busy="false"
+				hidden
+			>
 				<summary
 					class="popup__section-summary"
 					id="siteHandlingHeading"

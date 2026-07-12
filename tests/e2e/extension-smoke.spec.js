@@ -19,6 +19,7 @@ test("loads the popup page modules and core controls inside the extension origin
   await expect(popupPage.getByRole("heading", { name: "SumTabs" })).toBeVisible();
   await expect(popupPage.getByRole("button", { name: "Open settings" })).toBeVisible();
   await expect(popupPage.getByRole("button", { name: "Reapply rules to open tabs" })).toBeVisible();
+  await expect(popupPage.getByRole("status")).toBeAttached();
   await expect(popupPage.getByText("Current tab")).toBeVisible();
   await expect(popupPage.getByText("More actions")).toBeVisible();
   expect(pageErrors, "popup.html should not throw uncaught page errors while loading directly").toEqual([]);
