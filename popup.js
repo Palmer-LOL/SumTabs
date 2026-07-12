@@ -263,6 +263,7 @@ async function toggleExactAction() {
 			}
 			return nextValues;
 		});
+		await chrome.runtime.sendMessage({ type: "sumtabs:force-reevaluate" });
 
 		await renderActiveTabStatus();
 		announcePopupFeedback(
@@ -367,6 +368,7 @@ async function toggleDomainAction() {
 			}
 			return nextValues;
 		});
+		await chrome.runtime.sendMessage({ type: "sumtabs:force-reevaluate" });
 
 		await renderActiveTabStatus();
 		announcePopupFeedback(
