@@ -1,119 +1,219 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="color-scheme" content="light dark" />
-  <title>SumTabs</title>
-  <script src="theme.js"></script>
-  <link rel="stylesheet" href="style.css">
-  <link rel="stylesheet" href="popup-ui.css">
-  <link rel="stylesheet" href="theme.css">
-</head>
-<body class="page popup">
-  <header class="popup__header">
-    <h1 class="popup__title">SumTabs</h1>
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="color-scheme" content="light dark" />
+		<title>SumTabs</title>
+		<script src="theme.js"></script>
+		<link rel="stylesheet" href="style.css" />
+		<link rel="stylesheet" href="popup-ui.css" />
+		<link rel="stylesheet" href="theme.css" />
+	</head>
+	<body class="page popup">
+		<header class="popup__header">
+			<h1 class="popup__title">SumTabs</h1>
 
-    <div class="popup__header-actions" role="group" aria-label="Popup controls">
-      <button
-        class="icon-button icon-button--refresh"
-        id="forceReevaluate"
-        type="button"
-        title="Reapply rules to open tabs"
-      >Reapply rules to open tabs</button>
-      <button
-        class="icon-button icon-button--settings"
-        id="openSettings"
-        type="button"
-        title="Open settings"
-      >Open settings</button>
-    </div>
-  </header>
+			<div
+				class="popup__header-actions"
+				role="group"
+				aria-label="Popup controls"
+			>
+				<button
+					class="icon-button icon-button--refresh"
+					id="forceReevaluate"
+					type="button"
+					title="Reapply rules to open tabs"
+				>
+					Reapply rules to open tabs
+				</button>
+				<button
+					class="icon-button icon-button--settings"
+					id="openSettings"
+					type="button"
+					title="Open settings"
+				>
+					Open settings
+				</button>
+			</div>
+		</header>
 
-  <main class="popup__sections">
-    <details class="popup__section" id="statusCard">
-      <summary class="popup__section-summary" id="currentTabHeading">Current tab</summary>
-      <div class="popup__section-content">
-        <div class="popup__status-row">
-          <div class="popup__status-label">Hostname</div>
-          <div class="popup__status-value" id="activeHostname">Loading…</div>
-        </div>
+		<main class="popup__sections">
+			<details class="popup__section" id="statusCard" open>
+				<summary class="popup__section-summary" id="currentTabHeading">
+					Current tab
+				</summary>
+				<div class="popup__section-content">
+					<div class="popup__status-row">
+						<div class="popup__status-label">Hostname</div>
+						<div class="popup__status-value" id="activeHostname">
+							Loading…
+						</div>
+					</div>
 
-        <div class="popup__status-row">
-          <div class="popup__status-label">Grouped as</div>
-          <div class="popup__status-value" id="groupingTarget">Loading…</div>
-        </div>
+					<div class="popup__status-row">
+						<div class="popup__status-label">Grouped as</div>
+						<div class="popup__status-value" id="groupingTarget">
+							Loading…
+						</div>
+					</div>
 
-        <div class="settings__small-text" id="groupingExplanation">Checking this tab’s grouping status…</div>
-      </div>
-    </details>
+					<div class="settings__small-text" id="groupingExplanation">
+						Checking this tab’s grouping status…
+					</div>
+				</div>
+			</details>
 
-    <details class="popup__section" id="quickActionsCard" hidden>
-      <summary class="popup__section-summary" id="siteHandlingHeading">Change how this site is handled</summary>
-      <div class="popup__section-content">
-        <div class="settings__small-text popup__section-description">Adjust grouping rules for the active site.</div>
+			<details class="popup__section" id="quickActionsCard" hidden>
+				<summary
+					class="popup__section-summary"
+					id="siteHandlingHeading"
+				>
+					Change how this site is handled
+				</summary>
+				<div class="popup__section-content">
+					<div
+						class="settings__small-text popup__section-description"
+					>
+						Adjust grouping rules for the active site.
+					</div>
 
-        <div class="popup__status-row popup__toggle-row" id="exactActionRow">
-          <label class="popup__toggle-heading" for="exactActionToggle">
-            <div class="popup__status-value" id="exactActionLabel">Separate only this hostname</div>
-            <span class="toggle-switch">
-              <input
-                class="toggle-switch__input"
-                id="exactActionToggle"
-                type="checkbox"
-                aria-labelledby="exactActionLabel"
-                aria-describedby="exactActionStatus"
-              >
-              <span class="toggle-switch__track" aria-hidden="true"></span>
-            </span>
-          </label>
-          <div class="settings__small-text" id="exactActionStatus"></div>
-          <button class="popup__rule-action-proxy" id="toggleExactAction" type="button" hidden>Add rule</button>
-        </div>
+					<div
+						class="popup__status-row popup__toggle-row"
+						id="exactActionRow"
+					>
+						<label
+							class="popup__toggle-heading"
+							for="exactActionToggle"
+						>
+							<div
+								class="popup__status-value"
+								id="exactActionLabel"
+							>
+								Separate only this hostname
+							</div>
+							<span class="toggle-switch">
+								<input
+									class="toggle-switch__input"
+									id="exactActionToggle"
+									type="checkbox"
+									aria-labelledby="exactActionLabel"
+									aria-describedby="exactActionStatus"
+								/>
+								<span
+									class="toggle-switch__track"
+									aria-hidden="true"
+								></span>
+							</span>
+						</label>
+						<div
+							class="settings__small-text"
+							id="exactActionStatus"
+						></div>
+						<button
+							class="popup__rule-action-proxy"
+							id="toggleExactAction"
+							type="button"
+							hidden
+						>
+							Add rule
+						</button>
+					</div>
 
-        <div class="popup__status-row popup__toggle-row" id="domainActionRow">
-          <label class="popup__toggle-heading" for="domainActionToggle">
-            <div class="popup__status-value" id="domainActionLabel">Separate all matching subdomains</div>
-            <span class="toggle-switch">
-              <input
-                class="toggle-switch__input"
-                id="domainActionToggle"
-                type="checkbox"
-                aria-labelledby="domainActionLabel"
-                aria-describedby="domainActionStatus"
-              >
-              <span class="toggle-switch__track" aria-hidden="true"></span>
-            </span>
-          </label>
-          <div class="settings__small-text" id="domainActionStatus"></div>
-          <button class="popup__rule-action-proxy" id="toggleDomainAction" type="button" hidden>Add rule</button>
-        </div>
+					<div
+						class="popup__status-row popup__toggle-row"
+						id="domainActionRow"
+					>
+						<label
+							class="popup__toggle-heading"
+							for="domainActionToggle"
+						>
+							<div
+								class="popup__status-value"
+								id="domainActionLabel"
+							>
+								Separate all matching subdomains
+							</div>
+							<span class="toggle-switch">
+								<input
+									class="toggle-switch__input"
+									id="domainActionToggle"
+									type="checkbox"
+									aria-labelledby="domainActionLabel"
+									aria-describedby="domainActionStatus"
+								/>
+								<span
+									class="toggle-switch__track"
+									aria-hidden="true"
+								></span>
+							</span>
+						</label>
+						<div
+							class="settings__small-text"
+							id="domainActionStatus"
+						></div>
+						<button
+							class="popup__rule-action-proxy"
+							id="toggleDomainAction"
+							type="button"
+							hidden
+						>
+							Add rule
+						</button>
+					</div>
 
-        <div class="popup__status-row" id="bundleActionRow">
-          <label class="popup__status-value" for="bundleSelect">Custom bundle</label>
-          <select class="popup__select" id="bundleSelect" aria-describedby="bundleActionStatus"></select>
-          <div class="settings__small-text" id="bundleActionStatus"></div>
-          <div class="popup__button-row">
-            <button class="button" id="applyBundleAction" type="button">Apply</button>
-            <button class="button" id="removeBundleAction" type="button">Remove</button>
-          </div>
-        </div>
-      </div>
-    </details>
+					<div class="popup__status-row" id="bundleActionRow">
+						<label class="popup__status-value" for="bundleSelect"
+							>Custom bundle</label
+						>
+						<select
+							class="popup__select"
+							id="bundleSelect"
+							aria-describedby="bundleActionStatus"
+						></select>
+						<div
+							class="settings__small-text"
+							id="bundleActionStatus"
+						></div>
+						<div class="popup__button-row">
+							<button
+								class="button"
+								id="applyBundleAction"
+								type="button"
+							>
+								Apply
+							</button>
+							<button
+								class="button"
+								id="removeBundleAction"
+								type="button"
+							>
+								Remove
+							</button>
+						</div>
+					</div>
+				</div>
+			</details>
 
-    <details class="popup__section popup__section--more">
-      <summary class="popup__section-summary">More actions</summary>
-      <div class="popup__section-content">
-        <button class="button button--full-width button--danger" id="closeAllInWindow" type="button">Close all unpinned tabs in this window</button>
-      </div>
-    </details>
-  </main>
+			<details class="popup__section popup__section--more">
+				<summary class="popup__section-summary">More actions</summary>
+				<div class="popup__section-content">
+					<button
+						class="button button--full-width button--danger"
+						id="closeAllInWindow"
+						type="button"
+					>
+						Close all unpinned tabs in this window
+					</button>
+				</div>
+			</details>
+		</main>
 
-  <footer class="settings__small-text popup__description--muted">
-    Groups tabs by domain. No network calls.
-  </footer>
+		<footer class="settings__small-text popup__description--muted">
+			Groups tabs by domain. No network calls.
+		</footer>
 
-  <script type="module" src="popup.js"></script>
-  <script type="module" src="popup-ui.js"></script>
-</body>
+		<script type="module" src="popup.js"></script>
+		<script type="module" src="popup-ui.js"></script>
+	</body>
 </html>
