@@ -74,11 +74,11 @@ async function startServer() {
 }
 
 export const test = base.extend({
-  context: async ({}, use) => {
+  context: async ({ headless }, use) => {
     const userDataDir = await mkdtemp(path.join(os.tmpdir(), "sumtabs-pw-"));
     const context = await chromium.launchPersistentContext(userDataDir, {
       channel: "chromium",
-      headless: true,
+      headless,
       args: [
         `--disable-extensions-except=${repoRoot}`,
         `--load-extension=${repoRoot}`,
