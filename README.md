@@ -124,18 +124,34 @@ This project is licensed under the **[Do What The Fuck You Want To Public Licens
 
 ## Development Testing
 
-Automated testing currently focuses on deterministic unit tests for pure JavaScript logic. The extension remains directly loadable as an unpacked Manifest V3 extension; no build, bundling, transpilation, Node.js runtime, or npm install is required for normal extension use.
+Automated testing is split into two deliberately separate layers:
+
+- **Vitest unit tests** cover deterministic pure JavaScript contracts such as grouping identity resolution, multipart suffix behavior, custom bundle parsing, path-scoped bundle precedence, settings textarea parsing, custom bundle normalization, and persistence payload construction.
+- **Playwright smoke tests** load the actual unpacked Manifest V3 extension into bundled Chromium and verify a small set of browser-integration contracts involving the background service worker, `chrome.tabs`, `chrome.tabGroups`, `chrome.storage.sync`, and extension pages.
+
+The extension itself remains directly loadable as an unpacked Chromium extension. Normal extension use does **not** require npm installation, Node.js, a build step, bundling, or transpilation.
 
 ### Requirements
 
-- Node.js `20.19.0` or newer for local development tests (matching the Vite/Vitest engine requirement in the committed lockfile).
+- Node.js `20.19.0` or newer for local development tests.
 - npm, using the committed `package-lock.json` for repeatable dependency installation.
+- Playwright's bundled Chromium browser for the smoke suite.
 
 ### Install development dependencies
 
+Use the committed lockfile for repeatable installs:
+
 ```sh
-npm install
+npm ci
 ```
+
+Install the Playwright-managed Chromium browser explicitly when you want to run browser smoke tests:
+
+```sh
+npx playwright install chromium
+```
+
+The downloaded browser is a local development artifact and must not be committed.
 
 ### Run the unit tests once
 
@@ -149,10 +165,56 @@ npm run test:run
 npm test
 ```
 
+### Run the Playwright smoke tests
+
+```sh
+npm run test:e2e
+```
+
+For local debugging with a visible browser:
+
+```sh
+npm run test:e2e:headed
+```
+
+### Run the combined automated suite
+
+```sh
+npm run test:all
+```
+
 ### Current automated coverage
 
-The Vitest suite currently covers pure grouping and settings-validation contracts, including root-domain resolution, multipart suffix handling, custom bundle rule parsing, path-scoped bundle precedence, bundle conflict/owner helpers, hostname normalization, settings textarea parsing, custom bundle normalization, persistence payload construction, and raw JSON coercion.
+The Vitest suite covers pure grouping and settings-validation contracts, including root-domain resolution, multipart suffix handling, custom bundle rule parsing, path-scoped bundle precedence, bundle conflict/owner helpers, hostname normalization, settings textarea parsing, custom bundle normalization, persistence payload construction, and raw JSON coercion.
 
-### Not covered by current unit tests
+The Playwright smoke suite covers only a small number of real Chromium integration paths:
 
-The current unit tests do **not** replace manual validation in a real Chromium browser. They do not exercise `chrome.tabs`, `chrome.tabGroups`, `chrome.storage`, background service-worker event wiring, popup/options-page rendering, real tab movement, pinned-tab behavior, user-created tab group protection, permission prompts, keyboard/screen-reader behavior, or cross-window integration. Those areas require manual testing or a future browser-automation phase.
+- The unpacked Manifest V3 extension loads in an isolated persistent Chromium context.
+- The background service worker starts and exposes a discoverable extension ID.
+- A settings extension page can be opened from the extension origin.
+- Two eligible local HTTP tabs can form a managed `∑ ` tab group through Chromium tab APIs.
+- A single eligible HTTP tab remains ungrouped in the smoke scenario.
+- A pinned matching tab remains pinned and outside tab groups while unpinned matching tabs group.
+- A user-created, non-prefixed tab group remains protected during an explicit reevaluation.
+- The popup page can be loaded directly by extension URL and its core controls/modules are present.
+- The settings page can save the grouping threshold through the real UI and persist it to `chrome.storage.sync`.
+
+The Playwright tests use a loopback HTTP server and isolated browser profiles. They do not depend on public websites or a developer's normal browser profile.
+
+### Still requiring manual or future automated verification
+
+Automated browser smoke tests do **not** replace manual validation in a real supported Chromium browser. In particular, they do not fully cover:
+
+- Actual toolbar-popup activation behavior or active-tab detection from the browser toolbar.
+- Supported-browser differences in Chrome, Brave, and Edge.
+- Visual layout, text wrapping, theme quality, and responsive behavior.
+- Keyboard navigation and practical focus visibility.
+- Screen-reader announcements and interaction flow.
+- Permission presentation in browser extension-management UI.
+- Human usability of destructive actions, confirmation language, and settings workflows.
+- Collapse behavior across all focus/navigation cases.
+- Strict membership enforcement for every navigation and custom-rule scenario.
+- Cross-window grouping isolation beyond the pure unit contracts and manual checks.
+- Any core invariant not explicitly asserted by a Vitest or Playwright test.
+
+Treat Playwright as a smoke-test foundation for critical browser integration, not as exhaustive end-to-end coverage.
