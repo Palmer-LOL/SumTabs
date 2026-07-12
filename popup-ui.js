@@ -1,4 +1,4 @@
-import "./window-actions.js";
+import "./window-summary.js";
 
 const popupSections = [...document.querySelectorAll(".popup__section")];
 

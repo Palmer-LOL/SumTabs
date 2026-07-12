@@ -1,4 +1,5 @@
-.popup__window-actions {
+.popup__window-actions,
+.popup__window-summary-content {
 	display: grid;
 	gap: var(--spacing-md);
 }
@@ -41,6 +42,11 @@
 	gap: 6px;
 	padding-top: var(--spacing-md);
 	border-top: 1px solid var(--color-border);
+}
+
+.popup__window-actions > .popup__window-action-group:first-child {
+	padding-top: 0;
+	border-top: 0;
 }
 
 .popup__window-action-group .button--full-width {

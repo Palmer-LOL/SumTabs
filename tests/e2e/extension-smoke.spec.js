@@ -20,7 +20,18 @@ test("loads the popup page modules and core controls inside the extension origin
   await expect(popupPage.getByRole("button", { name: "Open settings" })).toBeVisible();
   await expect(popupPage.getByRole("button", { name: "Reapply rules to open tabs" })).toBeVisible();
   await expect(popupPage.getByRole("status")).toBeAttached();
-  await expect(popupPage.getByText("Current tab")).toBeVisible();
-  await expect(popupPage.getByText("More actions")).toBeVisible();
+  await expect(popupPage.getByText("Current tab", { exact: true })).toBeVisible();
+  await expect(popupPage.getByText("Current window", { exact: true })).toBeVisible();
+  await expect(popupPage.getByText("More actions", { exact: true })).toBeVisible();
+
+  const sectionIds = await popupPage
+    .locator(".popup__sections > .popup__section")
+    .evaluateAll((sections) => sections.map((section) => section.id));
+  expect(sectionIds.slice(0, 2)).toEqual(["statusCard", "windowSummarySection"]);
+
+  const currentWindowSection = popupPage.locator("#windowSummarySection");
+  const moreActionsSection = popupPage.locator("#windowActionsSection");
+  await expect(currentWindowSection.locator(".popup__window-summary")).toBeAttached();
+  await expect(moreActionsSection.locator(".popup__window-summary")).toHaveCount(0);
   expect(pageErrors, "popup.html should not throw uncaught page errors while loading directly").toEqual([]);
 });
