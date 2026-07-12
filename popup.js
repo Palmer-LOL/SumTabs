@@ -47,6 +47,14 @@ function setReapplyBusy(isBusy, message = "") {
 	if (message) announcePopupFeedback(message);
 }
 
+async function requestForceReevaluate() {
+	const response = await chrome.runtime.sendMessage({
+		type: "sumtabs:force-reevaluate",
+	});
+	if (response?.ok) return response;
+	throw new Error(response?.error || "Could not reapply rules.");
+}
+
 function normalizeBundleTitle(group, index) {
 	return String(group?.title ?? "").trim() || `Untitled bundle ${index + 1}`;
 }
@@ -263,7 +271,7 @@ async function toggleExactAction() {
 			}
 			return nextValues;
 		});
-		await chrome.runtime.sendMessage({ type: "sumtabs:force-reevaluate" });
+		await requestForceReevaluate();
 
 		await renderActiveTabStatus();
 		announcePopupFeedback(
@@ -329,7 +337,7 @@ async function updateSelectedBundleMembership({ shouldAdd }) {
 			domains: nextDomains,
 		};
 		await chrome.storage.sync.set({ customDomainGroups });
-		await chrome.runtime.sendMessage({ type: "sumtabs:force-reevaluate" });
+		await requestForceReevaluate();
 
 		await renderActiveTabStatus();
 		announcePopupFeedback(
@@ -368,7 +376,7 @@ async function toggleDomainAction() {
 			}
 			return nextValues;
 		});
-		await chrome.runtime.sendMessage({ type: "sumtabs:force-reevaluate" });
+		await requestForceReevaluate();
 
 		await renderActiveTabStatus();
 		announcePopupFeedback(
@@ -547,7 +555,7 @@ forceReevaluateButton?.addEventListener("click", async () => {
 	setReapplyBusy(true, "Reapplying rules…");
 
 	try {
-		await chrome.runtime.sendMessage({ type: "sumtabs:force-reevaluate" });
+		await requestForceReevaluate();
 		window.close();
 	} catch (error) {
 		console.error("Failed to force reevaluation", error);
