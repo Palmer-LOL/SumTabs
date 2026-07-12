@@ -65,7 +65,11 @@ async function startServer() {
   return {
     baseUrl,
     url: (pathname) => `${baseUrl}${pathname}`,
-    close: () => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())),
+    close: () => new Promise((resolve, reject) => {
+      server.closeIdleConnections?.();
+      server.closeAllConnections?.();
+      server.close((error) => error ? reject(error) : resolve());
+    }),
   };
 }
 
@@ -115,17 +119,27 @@ export const test = base.extend({
     }
   },
 
-  extensionApi: async ({ serviceWorker }, use) => {
+  extensionApi: async ({ context, extensionId, serviceWorker }, use) => {
+    const evaluateInWorker = (expression) => evaluateChrome(serviceWorker, expression);
+    const sendExtensionMessage = async (message) => {
+      const page = await openExtensionPage(context, extensionId, "settings.html");
+      try {
+        return await page.evaluate((payload) => chrome.runtime.sendMessage(payload), message);
+      } finally {
+        await page.close();
+      }
+    };
+
     const api = {
-      evaluate: (expression) => evaluateChrome(serviceWorker, expression),
-      resetStorage: () => evaluateChrome(serviceWorker, "await callbackify(chrome.storage.sync.clear.bind(chrome.storage.sync)); return true;"),
-      getStorage: () => evaluateChrome(serviceWorker, "return await callbackify(chrome.storage.sync.get.bind(chrome.storage.sync), null);"),
-      forceReevaluate: () => evaluateChrome(serviceWorker, "return await callbackify(chrome.runtime.sendMessage.bind(chrome.runtime), { type: 'sumtabs:force-reevaluate' });"),
-      tabByUrl: (url) => evaluateChrome(serviceWorker, `const tabs = await callbackify(chrome.tabs.query.bind(chrome.tabs), { url: ${JSON.stringify(url)} }); return tabs[0] || null;`),
-      tabsByUrls: (urls) => evaluateChrome(serviceWorker, `const urls = ${JSON.stringify(urls)}; const result = []; for (const url of urls) { const tabs = await callbackify(chrome.tabs.query.bind(chrome.tabs), { url }); result.push(tabs[0] || null); } return result;`),
-      groupById: (groupId) => evaluateChrome(serviceWorker, `return await callbackify(chrome.tabGroups.get.bind(chrome.tabGroups), ${JSON.stringify(groupId)});`),
-      pinTabByUrl: (url) => evaluateChrome(serviceWorker, `const tabs = await callbackify(chrome.tabs.query.bind(chrome.tabs), { url: ${JSON.stringify(url)} }); if (!tabs[0]) throw new Error('Tab not found for pinning'); return await callbackify(chrome.tabs.update.bind(chrome.tabs), tabs[0].id, { pinned: true });`),
-      createUserGroup: (urls, title) => evaluateChrome(serviceWorker, `const urls = ${JSON.stringify(urls)}; const tabIds = []; for (const url of urls) { const tabs = await callbackify(chrome.tabs.query.bind(chrome.tabs), { url }); if (!tabs[0]) throw new Error('Tab not found for user group: ' + url); tabIds.push(tabs[0].id); } const groupId = await callbackify(chrome.tabs.group.bind(chrome.tabs), { tabIds }); await callbackify(chrome.tabGroups.update.bind(chrome.tabGroups), groupId, { title: ${JSON.stringify(title)} }); return { groupId, tabs: await callbackify(chrome.tabs.query.bind(chrome.tabs), { groupId }) };`),
+      evaluate: evaluateInWorker,
+      resetStorage: () => evaluateInWorker("await callbackify(chrome.storage.sync.clear.bind(chrome.storage.sync)); return true;"),
+      getStorage: () => evaluateInWorker("return await callbackify(chrome.storage.sync.get.bind(chrome.storage.sync), null);"),
+      forceReevaluate: () => sendExtensionMessage({ type: "sumtabs:force-reevaluate" }),
+      tabByUrl: (url) => evaluateInWorker(`const tabs = await callbackify(chrome.tabs.query.bind(chrome.tabs), { url: ${JSON.stringify(url)} }); return tabs[0] || null;`),
+      tabsByUrls: (urls) => evaluateInWorker(`const urls = ${JSON.stringify(urls)}; const result = []; for (const url of urls) { const tabs = await callbackify(chrome.tabs.query.bind(chrome.tabs), { url }); result.push(tabs[0] || null); } return result;`),
+      groupById: (groupId) => evaluateInWorker(`return await callbackify(chrome.tabGroups.get.bind(chrome.tabGroups), ${JSON.stringify(groupId)});`),
+      pinTabByUrl: (url) => evaluateInWorker(`const tabs = await callbackify(chrome.tabs.query.bind(chrome.tabs), { url: ${JSON.stringify(url)} }); if (!tabs[0]) throw new Error('Tab not found for pinning'); return await callbackify(chrome.tabs.update.bind(chrome.tabs), tabs[0].id, { pinned: true });`),
+      createUserGroup: (urls, title) => evaluateInWorker(`const urls = ${JSON.stringify(urls)}; const tabIds = []; for (const url of urls) { const tabs = await callbackify(chrome.tabs.query.bind(chrome.tabs), { url }); if (!tabs[0]) throw new Error('Tab not found for user group: ' + url); tabIds.push(tabs[0].id); } const groupId = await callbackify(chrome.tabs.group.bind(chrome.tabs), { tabIds }); await callbackify(chrome.tabGroups.update.bind(chrome.tabGroups), groupId, { title: ${JSON.stringify(title)} }); return { groupId, tabs: await callbackify(chrome.tabs.query.bind(chrome.tabs), { groupId }) };`),
     };
     await use(api);
   },
