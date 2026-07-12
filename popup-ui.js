@@ -1,3 +1,5 @@
+import "./window-actions.js";
+
 const popupSections = [...document.querySelectorAll(".popup__section")];
 
 for (const section of popupSections) {
