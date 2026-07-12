@@ -119,3 +119,40 @@ SumTabs targets Chromium-based browsers that support the Tab Groups API (e.g. Ch
 ## License
 
 This project is licensed under the **[Do What The Fuck You Want To Public License (WTFPL v2)](https://www.wtfpl.net)**.
+
+---
+
+## Development Testing
+
+Automated testing currently focuses on deterministic unit tests for pure JavaScript logic. The extension remains directly loadable as an unpacked Manifest V3 extension; no build, bundling, transpilation, Node.js runtime, or npm install is required for normal extension use.
+
+### Requirements
+
+- Node.js `20.19.0` or newer for local development tests (matching the Vite/Vitest engine requirement in the committed lockfile).
+- npm, using the committed `package-lock.json` for repeatable dependency installation.
+
+### Install development dependencies
+
+```sh
+npm install
+```
+
+### Run the unit tests once
+
+```sh
+npm run test:run
+```
+
+### Run tests in watch mode
+
+```sh
+npm test
+```
+
+### Current automated coverage
+
+The Vitest suite currently covers pure grouping and settings-validation contracts, including root-domain resolution, multipart suffix handling, custom bundle rule parsing, path-scoped bundle precedence, bundle conflict/owner helpers, hostname normalization, settings textarea parsing, custom bundle normalization, persistence payload construction, and raw JSON coercion.
+
+### Not covered by current unit tests
+
+The current unit tests do **not** replace manual validation in a real Chromium browser. They do not exercise `chrome.tabs`, `chrome.tabGroups`, `chrome.storage`, background service-worker event wiring, popup/options-page rendering, real tab movement, pinned-tab behavior, user-created tab group protection, permission prompts, keyboard/screen-reader behavior, or cross-window integration. Those areas require manual testing or a future browser-automation phase.
