@@ -58,6 +58,58 @@ function bindRuleToggle({ toggleId, proxyButtonId }) {
 	syncToggle();
 }
 
+function getCloseAllContextElement(button) {
+	let context = document.getElementById("closeAllInWindowContext");
+	if (context) return context;
+
+	context = document.createElement("div");
+	context.className = "settings__small-text";
+	context.id = "closeAllInWindowContext";
+	button.insertAdjacentElement("afterend", context);
+	button.setAttribute("aria-describedby", context.id);
+	return context;
+}
+
+async function renderCloseAllContext() {
+	const button = document.getElementById("closeAllInWindow");
+	if (!button) return;
+
+	const context = getCloseAllContextElement(button);
+	button.disabled = true;
+	button.setAttribute("aria-busy", "true");
+	button.textContent = "Checking tabs…";
+	context.textContent = "Checking this window before closing tabs.";
+
+	try {
+		const tabs = await chrome.tabs.query({ currentWindow: true });
+		const unpinnedTabCount = tabs.filter(
+			(tab) => tab?.id != null && tab.pinned !== true,
+		).length;
+		const tabLabel = unpinnedTabCount === 1 ? "tab" : "tabs";
+
+		if (unpinnedTabCount === 0) {
+			button.textContent = "No unpinned tabs to close";
+			button.disabled = true;
+			context.textContent =
+				"All tabs in this window are pinned, so there are no tab groups to clear.";
+			return;
+		}
+
+		button.textContent = `Close ${unpinnedTabCount} unpinned ${tabLabel}`;
+		button.disabled = false;
+		context.textContent =
+			"This will also clear every tab group in this window. Pinned tabs will remain open.";
+	} catch (error) {
+		console.error("Failed to count unpinned tabs in current window", error);
+		button.textContent = "Close all unpinned tabs in this window";
+		button.disabled = false;
+		context.textContent =
+			"This will also clear every tab group in this window. Pinned tabs will remain open.";
+	} finally {
+		button.setAttribute("aria-busy", "false");
+	}
+}
+
 bindRuleToggle({
 	toggleId: "exactActionToggle",
 	proxyButtonId: "toggleExactAction",
@@ -67,3 +119,13 @@ bindRuleToggle({
 	toggleId: "domainActionToggle",
 	proxyButtonId: "toggleDomainAction",
 });
+
+const closeAllSection = document
+	.getElementById("closeAllInWindow")
+	?.closest(".popup__section");
+
+closeAllSection?.addEventListener("toggle", () => {
+	if (closeAllSection.open) void renderCloseAllContext();
+});
+
+void renderCloseAllContext();
