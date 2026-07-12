@@ -1,16 +1,20 @@
 {
   "name": "sumtabs",
-  "version": "0.26.5",
+  "version": "0.26.6",
   "private": true,
   "type": "module",
   "scripts": {
     "test": "vitest",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:all": "npm run test:run && npm run test:e2e"
   },
   "engines": {
     "node": ">=20.19.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "vitest": "3.2.7"
   }
 }
