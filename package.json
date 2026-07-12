@@ -1,6 +1,6 @@
 {
   "name": "sumtabs",
-  "version": "0.26.4",
+  "version": "0.26.5",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,7 +8,7 @@
     "test:run": "vitest run"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=20.19.0"
   },
   "devDependencies": {
     "vitest": "3.2.7"

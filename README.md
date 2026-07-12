@@ -128,7 +128,7 @@ Automated testing currently focuses on deterministic unit tests for pure JavaScr
 
 ### Requirements
 
-- Node.js `20` or newer for local development tests.
+- Node.js `20.19.0` or newer for local development tests (matching the Vite/Vitest engine requirement in the committed lockfile).
 - npm, using the committed `package-lock.json` for repeatable dependency installation.
 
 ### Install development dependencies
