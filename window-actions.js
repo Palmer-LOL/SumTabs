@@ -155,7 +155,6 @@ async function inspectCurrentWindow() {
 	);
 
 	return {
-		tabs,
 		pinnedTabs,
 		unpinnedTabs,
 		ungroupedTabs,
@@ -290,7 +289,7 @@ async function ungroupManaged(ui) {
 	if (!groupCount || !tabCount) return refresh(ui);
 
 	const confirmed = window.confirm(
-		`Ungroup ${groupCount} SumTabs-managed ${pluralize(groupCount, "group")} containing ${tabCount} ${pluralize(tabCount, "tab")}?\n\nThe tabs will stay open. SumTabs may group them again after navigation or when rules are reapplied.`,
+		`Ungroup ${groupCount} SumTabs-managed ${pluralize(groupCount, "group")} containing ${tabCount} ${pluralize(tabCount, "tab")} in this window?\n\nThe tabs will stay open. SumTabs may group them again after navigation or when rules are reapplied.`,
 	);
 	if (!confirmed) return;
 
@@ -311,9 +310,7 @@ async function closeManaged(ui) {
 	if (!tabCount) return refresh(ui);
 
 	const confirmed = window.confirm(
-		`Close ${tabCount} ${pluralize(tabCount, "tab")} in ${groupCount} SumTabs-managed ${pluralize(groupCount, "group")}?
-
-Ungrouped tabs, other groups, and pinned tabs will remain open.`,
+		`Close ${tabCount} ${pluralize(tabCount, "tab")} in ${groupCount} SumTabs-managed ${pluralize(groupCount, "group")} in this window?\n\nUngrouped tabs, other groups, and pinned tabs will remain open.`,
 	);
 	if (!confirmed) return;
 
@@ -329,9 +326,7 @@ async function closeUngrouped(ui) {
 	if (!tabCount) return refresh(ui);
 
 	const confirmed = window.confirm(
-		`Close ${tabCount} ungrouped ${pluralize(tabCount, "tab")}?
-
-Tabs in managed or other groups and pinned tabs will remain open.`,
+		`Close ${tabCount} ungrouped ${pluralize(tabCount, "tab")} in this window?\n\nTabs in managed or other groups and pinned tabs will remain open.`,
 	);
 	if (!confirmed) return;
 
@@ -349,12 +344,10 @@ async function closeAllUnpinned(ui) {
 	if (!tabCount) return refresh(ui);
 
 	const groupWarning = groupCount
-		? ` This will also clear ${groupCount} tab ${pluralize(groupCount, "group")}.`
+		? `This will also clear ${groupCount} tab ${pluralize(groupCount, "group")}. `
 		: "";
 	const confirmed = window.confirm(
-		`Close all ${tabCount} unpinned ${pluralize(tabCount, "tab")} in this window?
-
-${groupWarning} Pinned tabs will not be touched.`,
+		`Close all ${tabCount} unpinned ${pluralize(tabCount, "tab")} in this window?\n\n${groupWarning}Pinned tabs will not be touched.`,
 	);
 	if (!confirmed) return;
 
