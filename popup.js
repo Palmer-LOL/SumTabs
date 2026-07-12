@@ -10,6 +10,8 @@ const activeHostnameEl = document.getElementById("activeHostname");
 const groupingTargetEl = document.getElementById("groupingTarget");
 const groupingExplanationEl = document.getElementById("groupingExplanation");
 const quickActionsCardEl = document.getElementById("quickActionsCard");
+const popupFeedbackEl = document.getElementById("popupFeedback");
+const popupHeaderActionsEl = document.querySelector(".popup__header-actions");
 const exactActionRowEl = document.getElementById("exactActionRow");
 const exactActionLabelEl = document.getElementById("exactActionLabel");
 const exactActionStatusEl = document.getElementById("exactActionStatus");
@@ -28,6 +30,22 @@ const forceReevaluateButton = document.getElementById("forceReevaluate");
 
 let quickActionContext = null;
 let quickActionInFlight = false;
+
+function announcePopupFeedback(message) {
+	if (!popupFeedbackEl) return;
+	popupFeedbackEl.textContent = message;
+}
+
+function setQuickActionBusy(isBusy, message = "") {
+	quickActionInFlight = isBusy;
+	quickActionsCardEl?.setAttribute("aria-busy", String(isBusy));
+	if (message) announcePopupFeedback(message);
+}
+
+function setReapplyBusy(isBusy, message = "") {
+	popupHeaderActionsEl?.setAttribute("aria-busy", String(isBusy));
+	if (message) announcePopupFeedback(message);
+}
 
 function normalizeBundleTitle(group, index) {
 	return String(group?.title ?? "").trim() || `Untitled bundle ${index + 1}`;
@@ -231,7 +249,8 @@ async function updateSyncList(key, updateList) {
 async function toggleExactAction() {
 	if (!quickActionContext) return;
 
-	quickActionInFlight = true;
+	const wasEnabled = quickActionContext.exactActionEnabled;
+	setQuickActionBusy(true, wasEnabled ? "Removing rule…" : "Adding rule…");
 	renderQuickActions(quickActionContext);
 
 	try {
@@ -246,8 +265,13 @@ async function toggleExactAction() {
 		});
 
 		await renderActiveTabStatus();
+		announcePopupFeedback(
+			wasEnabled
+				? "Rule removed. Open tabs have been reorganized."
+				: "Rule added. Open tabs have been reorganized.",
+		);
 	} finally {
-		quickActionInFlight = false;
+		setQuickActionBusy(false);
 		renderQuickActions(quickActionContext);
 	}
 }
@@ -258,7 +282,16 @@ async function updateSelectedBundleMembership({ shouldAdd }) {
 	const selectedIndex = Number(bundleSelectEl.value);
 	if (!Number.isInteger(selectedIndex) || selectedIndex < 0) return;
 
-	quickActionInFlight = true;
+	const selectedBundleTitle = normalizeBundleTitle(
+		quickActionContext.customDomainGroups[selectedIndex],
+		selectedIndex,
+	);
+	setQuickActionBusy(
+		true,
+		shouldAdd
+			? `Adding to ${selectedBundleTitle}…`
+			: `Removing from ${selectedBundleTitle}…`,
+	);
 	renderQuickActions(quickActionContext);
 
 	try {
@@ -298,8 +331,13 @@ async function updateSelectedBundleMembership({ shouldAdd }) {
 		await chrome.runtime.sendMessage({ type: "sumtabs:force-reevaluate" });
 
 		await renderActiveTabStatus();
+		announcePopupFeedback(
+			shouldAdd
+				? `Added to ${selectedBundleTitle}. Open tabs have been reorganized.`
+				: `Removed from ${selectedBundleTitle}.`,
+		);
 	} finally {
-		quickActionInFlight = false;
+		setQuickActionBusy(false);
 		renderQuickActions(quickActionContext);
 	}
 }
@@ -315,7 +353,8 @@ async function removeHostnameFromSelectedBundle() {
 async function toggleDomainAction() {
 	if (!quickActionContext?.domainActionAvailable) return;
 
-	quickActionInFlight = true;
+	const wasEnabled = quickActionContext.domainActionEnabled;
+	setQuickActionBusy(true, wasEnabled ? "Removing rule…" : "Adding rule…");
 	renderQuickActions(quickActionContext);
 
 	try {
@@ -330,8 +369,13 @@ async function toggleDomainAction() {
 		});
 
 		await renderActiveTabStatus();
+		announcePopupFeedback(
+			wasEnabled
+				? "Rule removed. Open tabs have been reorganized."
+				: "Rule added. Open tabs have been reorganized.",
+		);
 	} finally {
-		quickActionInFlight = false;
+		setQuickActionBusy(false);
 		renderQuickActions(quickActionContext);
 	}
 }
@@ -462,12 +506,14 @@ document.getElementById("openSettings").addEventListener("click", async () => {
 toggleExactActionButton.addEventListener("click", () => {
 	toggleExactAction().catch((error) => {
 		console.error("Failed to update exact-host separation rule", error);
+		announcePopupFeedback("Could not update settings. Try again.");
 	});
 });
 
 toggleDomainActionButton.addEventListener("click", () => {
 	toggleDomainAction().catch((error) => {
 		console.error("Failed to update domain-wide separation rule", error);
+		announcePopupFeedback("Could not update settings. Try again.");
 	});
 });
 
@@ -476,6 +522,7 @@ bundleSelectEl.addEventListener("change", updateBundleSelectionStatus);
 applyBundleActionButton.addEventListener("click", () => {
 	addHostnameToSelectedBundle().catch((error) => {
 		console.error("Failed to add hostname to custom domain bundle", error);
+		announcePopupFeedback("Could not update settings. Try again.");
 	});
 });
 
@@ -485,6 +532,7 @@ removeBundleActionButton.addEventListener("click", () => {
 			"Failed to remove hostname from custom domain bundle",
 			error,
 		);
+		announcePopupFeedback("Could not update settings. Try again.");
 	});
 });
 
@@ -494,6 +542,7 @@ forceReevaluateButton?.addEventListener("click", async () => {
 	const originalLabel = forceReevaluateButton.textContent;
 	forceReevaluateButton.disabled = true;
 	forceReevaluateButton.textContent = "Reevaluating…";
+	setReapplyBusy(true, "Reapplying rules…");
 
 	try {
 		await chrome.runtime.sendMessage({ type: "sumtabs:force-reevaluate" });
@@ -503,6 +552,8 @@ forceReevaluateButton?.addEventListener("click", async () => {
 		forceReevaluateButton.disabled = false;
 		forceReevaluateButton.textContent =
 			originalLabel ?? "Reevaluate open tabs now";
+		setReapplyBusy(false);
+		announcePopupFeedback("Could not reapply rules. Try again.");
 	}
 });
 
@@ -533,4 +584,5 @@ renderActiveTabStatus().catch((error) => {
 		explanation: "Could not determine this tab’s grouping status.",
 	});
 	renderQuickActions(null);
+	announcePopupFeedback("Could not load popup status. Try again.");
 });
