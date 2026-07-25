@@ -1,5 +1,7 @@
+export const MANAGED_GROUP_MARKER = "∑"; // U+2211 N-ARY SUMMATION
+
 export const DEFAULTS = {
-	autoGroupPrefix: "∑ ",
+	autoGroupPrefix: `${MANAGED_GROUP_MARKER} `,
 	minTabsToGroup: 2,
 	collapseOtherGroupsOnNavEvents: true,
 	keepManagedGroupsAtFront: true,
