@@ -12,6 +12,10 @@ const groupingExplanationEl = document.getElementById("groupingExplanation");
 const quickActionsCardEl = document.getElementById("quickActionsCard");
 const popupFeedbackEl = document.getElementById("popupFeedback");
 const popupHeaderActionsEl = document.querySelector(".popup__header-actions");
+const ignoreActionRowEl = document.getElementById("ignoreActionRow");
+const ignoreActionLabelEl = document.getElementById("ignoreActionLabel");
+const ignoreActionStatusEl = document.getElementById("ignoreActionStatus");
+const toggleIgnoreActionButton = document.getElementById("toggleIgnoreAction");
 const exactActionRowEl = document.getElementById("exactActionRow");
 const exactActionLabelEl = document.getElementById("exactActionLabel");
 const exactActionStatusEl = document.getElementById("exactActionStatus");
@@ -53,6 +57,16 @@ async function requestForceReevaluate() {
 	});
 	if (response?.ok) return response;
 	throw new Error(response?.error || "Could not reapply rules.");
+}
+
+async function refreshOpenSettingsTabs() {
+	const settingsUrl = chrome.runtime.getURL("settings.html");
+	const settingsTabs = await chrome.tabs.query({ url: settingsUrl });
+	await Promise.all(
+		settingsTabs
+			.filter((tab) => Number.isInteger(tab.id))
+			.map((tab) => chrome.tabs.reload(tab.id)),
+	);
 }
 
 function normalizeBundleTitle(group, index) {
@@ -144,6 +158,7 @@ function renderQuickActions(context) {
 
 	if (!context) {
 		quickActionsCardEl.hidden = true;
+		ignoreActionRowEl.hidden = true;
 		exactActionRowEl.hidden = true;
 		domainActionRowEl.hidden = true;
 		bundleActionRowEl.hidden = true;
@@ -151,6 +166,20 @@ function renderQuickActions(context) {
 	}
 
 	quickActionsCardEl.hidden = false;
+
+	setActionState({
+		row: ignoreActionRowEl,
+		label: ignoreActionLabelEl,
+		status: {
+			element: ignoreActionStatusEl,
+			label: `Ignore ${context.hostname}`,
+			message: context.ignoreActionEnabled
+				? `${context.hostname} is ignored and will not be managed by SumTabs.`
+				: `Keep ${context.hostname} completely unmanaged.`,
+		},
+		button: toggleIgnoreActionButton,
+		buttonText: context.ignoreActionEnabled ? "Remove rule" : "Add rule",
+	});
 
 	setActionState({
 		row: exactActionRowEl,
@@ -278,6 +307,38 @@ async function toggleExactAction() {
 			wasEnabled
 				? "Rule removed. Open tabs have been reorganized."
 				: "Rule added. Open tabs have been reorganized.",
+		);
+	} finally {
+		setQuickActionBusy(false);
+		renderQuickActions(quickActionContext);
+	}
+}
+
+async function toggleIgnoreAction() {
+	if (!quickActionContext) return;
+
+	const wasEnabled = quickActionContext.ignoreActionEnabled;
+	setQuickActionBusy(true, wasEnabled ? "Removing ignore rule…" : "Adding ignore rule…");
+	renderQuickActions(quickActionContext);
+
+	try {
+		await updateSyncList("ignoredHostnames", (currentValues) => {
+			const nextValues = normalizeLowerList(currentValues);
+			if (quickActionContext.ignoreActionEnabled) {
+				nextValues.delete(quickActionContext.hostname);
+			} else {
+				nextValues.add(quickActionContext.hostname);
+			}
+			return nextValues;
+		});
+		await refreshOpenSettingsTabs();
+		await requestForceReevaluate();
+
+		await renderActiveTabStatus();
+		announcePopupFeedback(
+			wasEnabled
+				? "Ignore rule removed. Open tabs have been reorganized."
+				: "Hostname ignored. Open tabs have been reorganized.",
 		);
 	} finally {
 		setQuickActionBusy(false);
@@ -459,6 +520,9 @@ async function renderActiveTabStatus() {
 	const excludedFromRootCollapse = normalizeLowerList(
 		settings.excludedFromRootCollapse,
 	);
+	const ignoredHostnames = normalizeLowerList(settings.ignoredHostnames);
+	const hostname = parsedUrl.hostname.toLowerCase();
+	const isIgnored = ignoredHostnames.has(hostname);
 	// Mirror the background worker's shared precedence so the popup explanation matches runtime grouping behavior.
 	const grouping = resolveGroupingForHostname({
 		url: parsedUrl.href,
@@ -466,19 +530,31 @@ async function renderActiveTabStatus() {
 		pathname: parsedUrl.pathname,
 		commonMultipartSuffixes,
 		excludedFromRootCollapse,
+		ignoredHostnames,
+		customBundleMaps: buildCustomBundleMaps(settings.customDomainGroups),
+		managedPrefix: settings.autoGroupPrefix ?? DEFAULTS.autoGroupPrefix,
+	});
+	const groupingWithoutIgnore = grouping ?? resolveGroupingForHostname({
+		url: parsedUrl.href,
+		hostname,
+		pathname: parsedUrl.pathname,
+		commonMultipartSuffixes,
+		excludedFromRootCollapse,
 		customBundleMaps: buildCustomBundleMaps(settings.customDomainGroups),
 		managedPrefix: settings.autoGroupPrefix ?? DEFAULTS.autoGroupPrefix,
 	});
 	const domainAction = getDomainWideSeparationRule(
-		grouping.hostname,
+		hostname,
 		commonMultipartSuffixes,
 	);
 	const domainActionAvailable = !!domainAction;
 
 	setStatus({
-		hostname: grouping.hostname,
-		target: tabTargetLabel(activeTab, grouping),
-		explanation: getExplanation(activeTab, grouping),
+		hostname,
+		target: isIgnored ? "Ignored" : tabTargetLabel(activeTab, groupingWithoutIgnore),
+		explanation: isIgnored
+			? `This tab is unmanaged because ${hostname} is on the ignored-hostnames list.`
+			: getExplanation(activeTab, groupingWithoutIgnore),
 	});
 
 	const customDomainGroups = Array.isArray(settings.customDomainGroups)
@@ -486,15 +562,16 @@ async function renderActiveTabStatus() {
 		: [];
 	const bundleOwners = getCustomDomainBundleEntryOwners(
 		customDomainGroups,
-		grouping.hostname,
+		hostname,
 	);
 	const bundleMembershipByIndex = new Set(
 		bundleOwners.map((owner) => owner.groupIndex),
 	);
 
 	renderQuickActions({
-		hostname: grouping.hostname,
-		exactActionEnabled: excludedFromRootCollapse.has(grouping.hostname),
+		hostname,
+		ignoreActionEnabled: isIgnored,
+		exactActionEnabled: excludedFromRootCollapse.has(hostname),
 		domainActionAvailable,
 		domainActionEnabled:
 			domainActionAvailable &&
@@ -516,6 +593,13 @@ document.getElementById("openSettings").addEventListener("click", async () => {
 toggleExactActionButton.addEventListener("click", () => {
 	toggleExactAction().catch((error) => {
 		console.error("Failed to update exact-host separation rule", error);
+		announcePopupFeedback("Could not update settings. Try again.");
+	});
+});
+
+toggleIgnoreActionButton.addEventListener("click", () => {
+	toggleIgnoreAction().catch((error) => {
+		console.error("Failed to update ignored-hostname rule", error);
 		announcePopupFeedback("Could not update settings. Try again.");
 	});
 });

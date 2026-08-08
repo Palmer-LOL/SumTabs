@@ -42,6 +42,7 @@ The extension runs entirely in the browser â€” no network calls, no analytics â€
 
 - **Ignored hostnames.**
   Keep exact hostnames completely unmanaged. Matching is case-normalized but does not inherit from a parent to its subdomains or from a subdomain to its parent. Ignore rules have absolute precedence over custom bundles (including path-scoped rules), exact-host separation, domain-wide separation, and normal root-domain grouping. This functional setting is saved in `chrome.storage.sync`.
+  The popup includes an active-site toggle for adding or removing the current hostname from this list without opening Settings.
 
 - **Advanced JSON editing.**  
   A collapsible section in the settings page allows direct editing of the custom bundle configuration in JSON format.
