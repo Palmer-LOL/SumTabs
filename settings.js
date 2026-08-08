@@ -70,6 +70,7 @@ function validateSettings() {
     for (const config of [
         { fieldId: "commonMultipartSuffixes", validationId: "commonMultipartSuffixesValidation" },
         { fieldId: "excludedFromRootCollapse", validationId: "excludedFromRootCollapseValidation" },
+        { fieldId: "ignoredHostnames", validationId: "ignoredHostnamesValidation" },
     ]) {
         const field = $(config.fieldId);
         const parsed = parseHostnameRulesTextarea(field.value);
@@ -145,6 +146,7 @@ function captureUiSnapshot() {
         ignoreInitialTabUrlForEnforcement: $("ignoreInitialTabUrlForEnforcement").checked,
         commonMultipartSuffixes: $("commonMultipartSuffixes").value,
         excludedFromRootCollapse: $("excludedFromRootCollapse").value,
+        ignoredHostnames: $("ignoredHostnames").value,
         customDomainGroups: customGroupsState.map((group) => ({
             title: String(group?.title ?? ""),
             domainsText: String(group?.domainsText ?? ""),
@@ -356,6 +358,7 @@ function populateForm(settings) {
     $("ignoreInitialTabUrlForEnforcement").checked = !!settings.ignoreInitialTabUrlForEnforcement;
     $("commonMultipartSuffixes").value = arrayToLines(settings.commonMultipartSuffixes ?? DEFAULTS.commonMultipartSuffixes);
     $("excludedFromRootCollapse").value = arrayToLines(settings.excludedFromRootCollapse ?? DEFAULTS.excludedFromRootCollapse);
+    $("ignoredHostnames").value = arrayToLines(settings.ignoredHostnames ?? DEFAULTS.ignoredHostnames);
 
     jsonDraftDirty = false;
     pendingDeletion = null;
@@ -383,6 +386,7 @@ async function save() {
 
     const commonMultipartSuffixes = parseHostnameRulesTextarea($("commonMultipartSuffixes").value);
     const excludedFromRootCollapse = parseHostnameRulesTextarea($("excludedFromRootCollapse").value);
+    const ignoredHostnames = parseHostnameRulesTextarea($("ignoredHostnames").value);
     const payload = {
         minTabsToGroup: Number($("minTabsToGroup").value),
         collapseOtherGroupsOnNavEvents: $("collapseOtherGroupsOnNavEvents").checked,
@@ -392,6 +396,7 @@ async function save() {
         ignoreInitialTabUrlForEnforcement: $("ignoreInitialTabUrlForEnforcement").checked,
         commonMultipartSuffixes: commonMultipartSuffixes.validHostnames,
         excludedFromRootCollapse: excludedFromRootCollapse.validHostnames,
+        ignoredHostnames: ignoredHostnames.validHostnames,
         customDomainGroups: buildGroupsForPersistence(customGroupsState),
     };
 
@@ -429,6 +434,7 @@ function bindEvents() {
         "ignoreInitialTabUrlForEnforcement",
         "commonMultipartSuffixes",
         "excludedFromRootCollapse",
+        "ignoredHostnames",
     ];
 
     for (const id of simpleFields) {

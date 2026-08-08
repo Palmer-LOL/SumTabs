@@ -244,6 +244,24 @@
 						class="disclosure-card__content settings__section-content"
 					>
 						<div class="settings__row">
+							<label class="settings__field-label" for="ignoredHostnames"
+								>Ignore these specific hostnames</label
+							>
+							<textarea
+								class="textarea"
+								id="ignoredHostnames"
+								aria-describedby="ignoredHostnamesHelp ignoredHostnamesValidation"
+								spellcheck="false"
+							></textarea>
+							<div class="settings__help-text" id="ignoredHostnamesHelp">
+								Enter one exact hostname per line. Rules do not inherit to
+								subdomains, override bundles and separation rules, and keep
+								matching tabs unmanaged.
+							</div>
+							<div class="validation-message" id="ignoredHostnamesValidation" role="status"></div>
+						</div>
+
+						<div class="settings__row">
 							<label
 								class="settings__field-label"
 								for="commonMultipartSuffixes"
