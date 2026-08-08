@@ -722,6 +722,13 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 
         // If enabled, ignore grouping while the tab is still on its initial URL.
         if (IGNORE_INITIAL_TAB_URL && initialUrl && currentUrl === initialUrl) {
+            // Ignored hostnames have absolute precedence over the initial-URL
+            // exemption, so remove an ignored tab from any managed group first.
+            const grouping = resolveTabGrouping(tab, changeInfo);
+            if (!grouping?.identity) {
+                await enforceGroupMembershipForTab(tab, grouping);
+            }
+
             // Still update lastSeenUrlByTab so we don’t loop.
             lastSeenUrlByTab.set(tabId, currentUrl);
             return;

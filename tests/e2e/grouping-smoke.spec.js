@@ -155,3 +155,25 @@ test("ignored-host reevaluation bypasses the unified initial-URL exemption", asy
     noGroupId,
   ]);
 });
+
+test("returning to an ignored initial URL removes a tab from its managed group", async ({ context, httpServer, extensionApi }) => {
+  const initialUrl = httpServer.url("/ignored-initial").replace("127.0.0.1", "localhost");
+  const groupedUrl = httpServer.url("/grouped-after-initial");
+  const companionUrl = httpServer.url("/grouped-companion");
+  await extensionApi.setStorage({ ignoredHostnames: ["localhost"] });
+
+  const returningPage = await openHttpPage(context, initialUrl);
+  await returningPage.goto(groupedUrl);
+  const companionPage = await openHttpPage(context, httpServer.url("/companion-initial").replace("127.0.0.1", "localhost"));
+  await companionPage.goto(companionUrl);
+  await extensionApi.forceReevaluate();
+  await expectTabsGrouped(extensionApi, [groupedUrl, companionUrl]);
+
+  // Let the extension's short mutation lock expire before exercising a user navigation event.
+  await returningPage.waitForTimeout(400);
+  await returningPage.goto(initialUrl);
+
+  await expect.poll(async () => (await extensionApi.tabByUrl(initialUrl))?.groupId ?? noGroupId, {
+    message: "an ignored initial URL should not remain in a managed group",
+  }).toBe(noGroupId);
+});
