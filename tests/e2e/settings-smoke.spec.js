@@ -46,3 +46,22 @@ test("saves and reloads canonical ignored hostnames through sync storage", async
   await settingsPage.getByText("Site separation rules").click();
   await expect(ignored).toHaveValue("docs.example.com\nmail.example.com");
 });
+
+test("uses one initial-URL toggle and keeps both legacy storage keys aligned", async ({ extensionPage, extensionApi }) => {
+  await extensionApi.setStorage({
+    ignoreInitialTabUrlForGrouping: true,
+    ignoreInitialTabUrlForEnforcement: false,
+  });
+  const settingsPage = await extensionPage("settings.html");
+  await settingsPage.getByText("Advanced behavior").click();
+
+  const initialUrlToggle = settingsPage.getByLabel("Ignore a tab’s initial URL while grouping and enforcing placement");
+  await expect(initialUrlToggle).not.toBeChecked();
+  await initialUrlToggle.check();
+  await settingsPage.getByRole("button", { name: "Save changes" }).click();
+
+  await expect.poll(async () => {
+    const stored = await extensionApi.getStorage();
+    return [stored.ignoreInitialTabUrlForGrouping, stored.ignoreInitialTabUrlForEnforcement];
+  }).toEqual([true, true]);
+});

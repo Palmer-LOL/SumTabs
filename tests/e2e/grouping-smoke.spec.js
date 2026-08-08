@@ -113,3 +113,22 @@ test("reevaluation removes ignored unpinned tabs from managed groups but preserv
     userTitle: "Manual ignored hosts",
   });
 });
+
+test("ignored-host reevaluation bypasses the unified initial-URL exemption", async ({ context, httpServer, extensionApi }) => {
+  const urls = [httpServer.url("/initial-managed-a"), httpServer.url("/initial-managed-b")];
+  await extensionApi.setStorage({
+    ignoreInitialTabUrlForGrouping: false,
+    ignoreInitialTabUrlForEnforcement: true,
+  });
+  for (const url of urls) await openHttpPage(context, url);
+  await extensionApi.forceReevaluate();
+  await expectTabsGrouped(extensionApi, urls);
+
+  await extensionApi.setStorage({ ignoredHostnames: ["127.0.0.1"] });
+  await extensionApi.forceReevaluate();
+
+  await expect.poll(async () => (await extensionApi.tabsByUrls(urls)).map((tab) => tab?.groupId)).toEqual([
+    noGroupId,
+    noGroupId,
+  ]);
+});

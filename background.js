@@ -16,8 +16,8 @@ let MIN_TABS_TO_GROUP = DEFAULTS.minTabsToGroup;
 let COLLAPSE_OTHER_GROUPS_ON_NAV_EVENTS = DEFAULTS.collapseOtherGroupsOnNavEvents;
 let KEEP_MANAGED_GROUPS_AT_FRONT = DEFAULTS.keepManagedGroupsAtFront;
 let UNGROUP_SINGLETON_MANAGED_GROUPS = DEFAULTS.ungroupSingletonManagedGroups;
-let IGNORE_INITIAL_TAB_URL_FOR_GROUPING = DEFAULTS.ignoreInitialTabUrlForGrouping;
-let IGNORE_INITIAL_TAB_URL_FOR_ENFORCEMENT = DEFAULTS.ignoreInitialTabUrlForEnforcement;
+let IGNORE_INITIAL_TAB_URL = DEFAULTS.ignoreInitialTabUrlForGrouping
+    && DEFAULTS.ignoreInitialTabUrlForEnforcement;
 
 let customBundleMaps = {
     exactHostnameToBundleRules: new Map(),
@@ -35,8 +35,10 @@ function rebuildDerived() {
     COLLAPSE_OTHER_GROUPS_ON_NAV_EVENTS = !!settings.collapseOtherGroupsOnNavEvents;
     KEEP_MANAGED_GROUPS_AT_FRONT = !!settings.keepManagedGroupsAtFront;
     UNGROUP_SINGLETON_MANAGED_GROUPS = !!settings.ungroupSingletonManagedGroups;
-    IGNORE_INITIAL_TAB_URL_FOR_GROUPING = !!settings.ignoreInitialTabUrlForGrouping;
-    IGNORE_INITIAL_TAB_URL_FOR_ENFORCEMENT = !!settings.ignoreInitialTabUrlForEnforcement;
+    // These legacy storage keys now represent one setting. Treat a historical
+    // mismatch as disabled so grouping and enforcement can never diverge.
+    IGNORE_INITIAL_TAB_URL = !!settings.ignoreInitialTabUrlForGrouping
+        && !!settings.ignoreInitialTabUrlForEnforcement;
 
     COMMON_MULTIPART_SUFFIXES = new Set((settings.commonMultipartSuffixes ?? []).map(s => String(s).toLowerCase()));
     EXCLUDED_FROM_ROOT_COLLAPSE = new Set((settings.excludedFromRootCollapse ?? []).map(s => String(s).toLowerCase()));
@@ -459,7 +461,9 @@ async function enforceGroupMembershipForTab(tab, currentGrouping) {
     if (!tab || tab.id == null) return;
     if (tab.pinned) return;
 
-    if (IGNORE_INITIAL_TAB_URL_FOR_ENFORCEMENT) {
+    // A missing identity (including an ignored hostname) must be enforced
+    // immediately so ignore rules retain absolute precedence.
+    if (IGNORE_INITIAL_TAB_URL && currentGrouping?.identity) {
         const initialUrl = initialUrlByTab.get(tab.id);
         const currentUrl = tab.url || tab.pendingUrl;
         if (initialUrl && currentUrl && currentUrl === initialUrl) return;
@@ -490,7 +494,7 @@ async function maybeGroupTab(tab, currentGrouping) {
     if (await classifyTabGroup(tab, { fresh: true }) === GROUP_OWNERSHIP_PROTECTED) return;
 
     // Optional: ignore grouping while the tab is still on its initial URL
-    if (IGNORE_INITIAL_TAB_URL_FOR_GROUPING) {
+    if (IGNORE_INITIAL_TAB_URL) {
         const initialUrl = initialUrlByTab.get(tab.id);
         const currentUrl = tab.url || tab.pendingUrl;
         if (initialUrl && currentUrl && currentUrl === initialUrl) return;
@@ -701,7 +705,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
         const initialUrl = initialUrlByTab.get(tabId);
 
         // If enabled, ignore grouping while the tab is still on its initial URL.
-        if (IGNORE_INITIAL_TAB_URL_FOR_GROUPING && initialUrl && currentUrl === initialUrl) {
+        if (IGNORE_INITIAL_TAB_URL && initialUrl && currentUrl === initialUrl) {
             // Still update lastSeenUrlByTab so we don’t loop.
             lastSeenUrlByTab.set(tabId, currentUrl);
             return;

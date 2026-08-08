@@ -142,8 +142,7 @@ function captureUiSnapshot() {
         collapseOtherGroupsOnNavEvents: $("collapseOtherGroupsOnNavEvents").checked,
         keepManagedGroupsAtFront: $("keepManagedGroupsAtFront").checked,
         ungroupSingletonManagedGroups: $("ungroupSingletonManagedGroups").checked,
-        ignoreInitialTabUrlForGrouping: $("ignoreInitialTabUrlForGrouping").checked,
-        ignoreInitialTabUrlForEnforcement: $("ignoreInitialTabUrlForEnforcement").checked,
+        ignoreInitialTabUrl: $("ignoreInitialTabUrl").checked,
         commonMultipartSuffixes: $("commonMultipartSuffixes").value,
         excludedFromRootCollapse: $("excludedFromRootCollapse").value,
         ignoredHostnames: $("ignoredHostnames").value,
@@ -354,8 +353,8 @@ function populateForm(settings) {
     $("collapseOtherGroupsOnNavEvents").checked = !!settings.collapseOtherGroupsOnNavEvents;
     $("keepManagedGroupsAtFront").checked = !!settings.keepManagedGroupsAtFront;
     $("ungroupSingletonManagedGroups").checked = !!settings.ungroupSingletonManagedGroups;
-    $("ignoreInitialTabUrlForGrouping").checked = !!settings.ignoreInitialTabUrlForGrouping;
-    $("ignoreInitialTabUrlForEnforcement").checked = !!settings.ignoreInitialTabUrlForEnforcement;
+    $("ignoreInitialTabUrl").checked = !!settings.ignoreInitialTabUrlForGrouping
+        && !!settings.ignoreInitialTabUrlForEnforcement;
     $("commonMultipartSuffixes").value = arrayToLines(settings.commonMultipartSuffixes ?? DEFAULTS.commonMultipartSuffixes);
     $("excludedFromRootCollapse").value = arrayToLines(settings.excludedFromRootCollapse ?? DEFAULTS.excludedFromRootCollapse);
     $("ignoredHostnames").value = arrayToLines(settings.ignoredHostnames ?? DEFAULTS.ignoredHostnames);
@@ -392,8 +391,9 @@ async function save() {
         collapseOtherGroupsOnNavEvents: $("collapseOtherGroupsOnNavEvents").checked,
         keepManagedGroupsAtFront: $("keepManagedGroupsAtFront").checked,
         ungroupSingletonManagedGroups: $("ungroupSingletonManagedGroups").checked,
-        ignoreInitialTabUrlForGrouping: $("ignoreInitialTabUrlForGrouping").checked,
-        ignoreInitialTabUrlForEnforcement: $("ignoreInitialTabUrlForEnforcement").checked,
+        // Keep the legacy storage keys aligned for backward compatibility.
+        ignoreInitialTabUrlForGrouping: $("ignoreInitialTabUrl").checked,
+        ignoreInitialTabUrlForEnforcement: $("ignoreInitialTabUrl").checked,
         commonMultipartSuffixes: commonMultipartSuffixes.validHostnames,
         excludedFromRootCollapse: excludedFromRootCollapse.validHostnames,
         ignoredHostnames: ignoredHostnames.validHostnames,
@@ -430,8 +430,7 @@ function bindEvents() {
         "collapseOtherGroupsOnNavEvents",
         "keepManagedGroupsAtFront",
         "ungroupSingletonManagedGroups",
-        "ignoreInitialTabUrlForGrouping",
-        "ignoreInitialTabUrlForEnforcement",
+        "ignoreInitialTabUrl",
         "commonMultipartSuffixes",
         "excludedFromRootCollapse",
         "ignoredHostnames",
