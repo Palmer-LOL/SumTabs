@@ -40,6 +40,9 @@ The extension runs entirely in the browser â€” no network calls, no analytics â€
 - **Exact-host separation rules.**  
   Keep specific hostnames (e.g. `docs.google.com`) separate from their broader domain grouping.
 
+- **Ignored hostnames.**
+  Keep exact hostnames completely unmanaged. Matching is case-normalized but does not inherit from a parent to its subdomains or from a subdomain to its parent. Ignore rules have absolute precedence over custom bundles (including path-scoped rules), exact-host separation, domain-wide separation, and normal root-domain grouping. This functional setting is saved in `chrome.storage.sync`.
+
 - **Advanced JSON editing.**  
   A collapsible section in the settings page allows direct editing of the custom bundle configuration in JSON format.
 
@@ -87,6 +90,7 @@ To configure behavior:
 - Toggle **Ignore initial tab URL for grouping** and **Ignore initial tab URL for enforcement** to avoid grouping while tabs are still on their initial load.
 - Add entries under **Domain-wide subdomain separation rules** (one per line) to keep matching subdomain families separate when needed.
 - Add **Exact-host separation rules** (one per line) to keep specific hosts separate from their broader domain grouping.
+- Add hostnames under **Ignore these specific hostnames** (one per line), then select **Save changes**, to keep exact matches unmanaged. Reset loads the empty default into the editor; save to persist it.
 - Use the **Custom domain bundles** editor to create/manage domain groupings and optionally choose a bundle color.
 
 ---
@@ -197,7 +201,7 @@ The Playwright smoke suite covers only a small number of real Chromium integrati
 - A pinned matching tab remains pinned and outside tab groups while unpinned matching tabs group.
 - A user-created, non-prefixed tab group remains protected during an explicit reevaluation.
 - The popup page can be loaded directly by extension URL and its core controls/modules are present.
-- The settings page can save the grouping threshold through the real UI and persist it to `chrome.storage.sync`.
+- The settings page can save the grouping threshold and canonical ignored-hostname rules through the real UI, persist them to `chrome.storage.sync`, and reload them.
 
 The Playwright tests use a loopback HTTP server and isolated browser profiles. They do not depend on public websites or a developer's normal browser profile.
 

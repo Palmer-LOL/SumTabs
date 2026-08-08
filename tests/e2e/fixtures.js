@@ -134,6 +134,7 @@ export const test = base.extend({
       evaluate: evaluateInWorker,
       resetStorage: () => evaluateInWorker("await callbackify(chrome.storage.sync.clear.bind(chrome.storage.sync)); return true;"),
       getStorage: () => evaluateInWorker("return await callbackify(chrome.storage.sync.get.bind(chrome.storage.sync), null);"),
+      setStorage: (values) => evaluateInWorker(`await callbackify(chrome.storage.sync.set.bind(chrome.storage.sync), ${JSON.stringify(values)}); return true;`),
       forceReevaluate: () => sendExtensionMessage({ type: "sumtabs:force-reevaluate" }),
       tabByUrl: (url) => evaluateInWorker(`const targetUrl = ${JSON.stringify(url)}; const tabs = await callbackify(chrome.tabs.query.bind(chrome.tabs), {}); return tabs.find((tab) => tab.url === targetUrl) || null;`),
       tabsByUrls: (urls) => evaluateInWorker(`const urls = ${JSON.stringify(urls)}; const tabs = await callbackify(chrome.tabs.query.bind(chrome.tabs), {}); return urls.map((url) => tabs.find((tab) => tab.url === url) || null);`),

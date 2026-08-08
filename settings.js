@@ -70,6 +70,7 @@ function validateSettings() {
     for (const config of [
         { fieldId: "commonMultipartSuffixes", validationId: "commonMultipartSuffixesValidation" },
         { fieldId: "excludedFromRootCollapse", validationId: "excludedFromRootCollapseValidation" },
+        { fieldId: "ignoredHostnames", validationId: "ignoredHostnamesValidation" },
     ]) {
         const field = $(config.fieldId);
         const parsed = parseHostnameRulesTextarea(field.value);
@@ -141,10 +142,10 @@ function captureUiSnapshot() {
         collapseOtherGroupsOnNavEvents: $("collapseOtherGroupsOnNavEvents").checked,
         keepManagedGroupsAtFront: $("keepManagedGroupsAtFront").checked,
         ungroupSingletonManagedGroups: $("ungroupSingletonManagedGroups").checked,
-        ignoreInitialTabUrlForGrouping: $("ignoreInitialTabUrlForGrouping").checked,
-        ignoreInitialTabUrlForEnforcement: $("ignoreInitialTabUrlForEnforcement").checked,
+        ignoreInitialTabUrl: $("ignoreInitialTabUrl").checked,
         commonMultipartSuffixes: $("commonMultipartSuffixes").value,
         excludedFromRootCollapse: $("excludedFromRootCollapse").value,
+        ignoredHostnames: $("ignoredHostnames").value,
         customDomainGroups: customGroupsState.map((group) => ({
             title: String(group?.title ?? ""),
             domainsText: String(group?.domainsText ?? ""),
@@ -352,10 +353,11 @@ function populateForm(settings) {
     $("collapseOtherGroupsOnNavEvents").checked = !!settings.collapseOtherGroupsOnNavEvents;
     $("keepManagedGroupsAtFront").checked = !!settings.keepManagedGroupsAtFront;
     $("ungroupSingletonManagedGroups").checked = !!settings.ungroupSingletonManagedGroups;
-    $("ignoreInitialTabUrlForGrouping").checked = !!settings.ignoreInitialTabUrlForGrouping;
-    $("ignoreInitialTabUrlForEnforcement").checked = !!settings.ignoreInitialTabUrlForEnforcement;
+    $("ignoreInitialTabUrl").checked = !!settings.ignoreInitialTabUrlForGrouping
+        && !!settings.ignoreInitialTabUrlForEnforcement;
     $("commonMultipartSuffixes").value = arrayToLines(settings.commonMultipartSuffixes ?? DEFAULTS.commonMultipartSuffixes);
     $("excludedFromRootCollapse").value = arrayToLines(settings.excludedFromRootCollapse ?? DEFAULTS.excludedFromRootCollapse);
+    $("ignoredHostnames").value = arrayToLines(settings.ignoredHostnames ?? DEFAULTS.ignoredHostnames);
 
     jsonDraftDirty = false;
     pendingDeletion = null;
@@ -383,15 +385,18 @@ async function save() {
 
     const commonMultipartSuffixes = parseHostnameRulesTextarea($("commonMultipartSuffixes").value);
     const excludedFromRootCollapse = parseHostnameRulesTextarea($("excludedFromRootCollapse").value);
+    const ignoredHostnames = parseHostnameRulesTextarea($("ignoredHostnames").value);
     const payload = {
         minTabsToGroup: Number($("minTabsToGroup").value),
         collapseOtherGroupsOnNavEvents: $("collapseOtherGroupsOnNavEvents").checked,
         keepManagedGroupsAtFront: $("keepManagedGroupsAtFront").checked,
         ungroupSingletonManagedGroups: $("ungroupSingletonManagedGroups").checked,
-        ignoreInitialTabUrlForGrouping: $("ignoreInitialTabUrlForGrouping").checked,
-        ignoreInitialTabUrlForEnforcement: $("ignoreInitialTabUrlForEnforcement").checked,
+        // Keep the legacy storage keys aligned for backward compatibility.
+        ignoreInitialTabUrlForGrouping: $("ignoreInitialTabUrl").checked,
+        ignoreInitialTabUrlForEnforcement: $("ignoreInitialTabUrl").checked,
         commonMultipartSuffixes: commonMultipartSuffixes.validHostnames,
         excludedFromRootCollapse: excludedFromRootCollapse.validHostnames,
+        ignoredHostnames: ignoredHostnames.validHostnames,
         customDomainGroups: buildGroupsForPersistence(customGroupsState),
     };
 
@@ -425,10 +430,10 @@ function bindEvents() {
         "collapseOtherGroupsOnNavEvents",
         "keepManagedGroupsAtFront",
         "ungroupSingletonManagedGroups",
-        "ignoreInitialTabUrlForGrouping",
-        "ignoreInitialTabUrlForEnforcement",
+        "ignoreInitialTabUrl",
         "commonMultipartSuffixes",
         "excludedFromRootCollapse",
+        "ignoredHostnames",
     ];
 
     for (const id of simpleFields) {

@@ -10,13 +10,14 @@ let settings = structuredClone(DEFAULTS);
 // Derived runtime structures
 let COMMON_MULTIPART_SUFFIXES = new Set(DEFAULTS.commonMultipartSuffixes);
 let EXCLUDED_FROM_ROOT_COLLAPSE = new Set(DEFAULTS.excludedFromRootCollapse);
+let IGNORED_HOSTNAMES = new Set(DEFAULTS.ignoredHostnames);
 let AUTO_GROUP_PREFIX = DEFAULTS.autoGroupPrefix;
 let MIN_TABS_TO_GROUP = DEFAULTS.minTabsToGroup;
 let COLLAPSE_OTHER_GROUPS_ON_NAV_EVENTS = DEFAULTS.collapseOtherGroupsOnNavEvents;
 let KEEP_MANAGED_GROUPS_AT_FRONT = DEFAULTS.keepManagedGroupsAtFront;
 let UNGROUP_SINGLETON_MANAGED_GROUPS = DEFAULTS.ungroupSingletonManagedGroups;
-let IGNORE_INITIAL_TAB_URL_FOR_GROUPING = DEFAULTS.ignoreInitialTabUrlForGrouping;
-let IGNORE_INITIAL_TAB_URL_FOR_ENFORCEMENT = DEFAULTS.ignoreInitialTabUrlForEnforcement;
+let IGNORE_INITIAL_TAB_URL = DEFAULTS.ignoreInitialTabUrlForGrouping
+    && DEFAULTS.ignoreInitialTabUrlForEnforcement;
 
 let customBundleMaps = {
     exactHostnameToBundleRules: new Map(),
@@ -34,11 +35,14 @@ function rebuildDerived() {
     COLLAPSE_OTHER_GROUPS_ON_NAV_EVENTS = !!settings.collapseOtherGroupsOnNavEvents;
     KEEP_MANAGED_GROUPS_AT_FRONT = !!settings.keepManagedGroupsAtFront;
     UNGROUP_SINGLETON_MANAGED_GROUPS = !!settings.ungroupSingletonManagedGroups;
-    IGNORE_INITIAL_TAB_URL_FOR_GROUPING = !!settings.ignoreInitialTabUrlForGrouping;
-    IGNORE_INITIAL_TAB_URL_FOR_ENFORCEMENT = !!settings.ignoreInitialTabUrlForEnforcement;
+    // These legacy storage keys now represent one setting. Treat a historical
+    // mismatch as disabled so grouping and enforcement can never diverge.
+    IGNORE_INITIAL_TAB_URL = !!settings.ignoreInitialTabUrlForGrouping
+        && !!settings.ignoreInitialTabUrlForEnforcement;
 
     COMMON_MULTIPART_SUFFIXES = new Set((settings.commonMultipartSuffixes ?? []).map(s => String(s).toLowerCase()));
     EXCLUDED_FROM_ROOT_COLLAPSE = new Set((settings.excludedFromRootCollapse ?? []).map(s => String(s).toLowerCase()));
+    IGNORED_HOSTNAMES = new Set((settings.ignoredHostnames ?? []).map(s => String(s).trim().toLowerCase()).filter(Boolean));
 
     customBundleMaps = buildCustomBundleMaps(settings.customDomainGroups);
     customIdentityToColor = new Map();
@@ -73,7 +77,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     for (const [k, v] of Object.entries(changes)) settings[k] = v.newValue;
     rebuildDerived();
 
-    if (changes.keepManagedGroupsAtFront?.newValue) {
+    if (changes.keepManagedGroupsAtFront?.newValue || changes.ignoredHostnames) {
         forceReevaluateAllWindows().catch(() => {});
     }
 });
@@ -160,6 +164,7 @@ function getGroupingForUrl(parsedUrl) {
         pathname: parsedUrl.pathname,
         commonMultipartSuffixes: COMMON_MULTIPART_SUFFIXES,
         excludedFromRootCollapse: EXCLUDED_FROM_ROOT_COLLAPSE,
+        ignoredHostnames: IGNORED_HOSTNAMES,
         customBundleMaps,
         managedPrefix: AUTO_GROUP_PREFIX,
     });
@@ -456,7 +461,9 @@ async function enforceGroupMembershipForTab(tab, currentGrouping) {
     if (!tab || tab.id == null) return;
     if (tab.pinned) return;
 
-    if (IGNORE_INITIAL_TAB_URL_FOR_ENFORCEMENT) {
+    // A missing identity (including an ignored hostname) must be enforced
+    // immediately so ignore rules retain absolute precedence.
+    if (IGNORE_INITIAL_TAB_URL && currentGrouping?.identity) {
         const initialUrl = initialUrlByTab.get(tab.id);
         const currentUrl = tab.url || tab.pendingUrl;
         if (initialUrl && currentUrl && currentUrl === initialUrl) return;
@@ -471,10 +478,10 @@ async function enforceGroupMembershipForTab(tab, currentGrouping) {
     if (!isManagedGroupTitle(title)) return;
 
     const currentIdentity = currentGrouping?.identity;
-    if (!currentIdentity) return;
 
-    // If tab no longer matches the group's identity, ungroup it.
-    if (title !== currentIdentity) {
+    // Ignored hostnames have no identity and must leave managed groups. Other
+    // identity changes continue to receive strict membership enforcement.
+    if (!currentIdentity || title !== currentIdentity) {
         await ungroupManagedTab(tab.id, gid);
     }
 }
@@ -487,17 +494,17 @@ async function maybeGroupTab(tab, currentGrouping) {
     if (await classifyTabGroup(tab, { fresh: true }) === GROUP_OWNERSHIP_PROTECTED) return;
 
     // Optional: ignore grouping while the tab is still on its initial URL
-    if (IGNORE_INITIAL_TAB_URL_FOR_GROUPING) {
+    if (IGNORE_INITIAL_TAB_URL) {
         const initialUrl = initialUrlByTab.get(tab.id);
         const currentUrl = tab.url || tab.pendingUrl;
         if (initialUrl && currentUrl && currentUrl === initialUrl) return;
     }
 
     const groupIdentity = currentGrouping?.identity;
-    if (!groupIdentity) return;
-
     // Membership enforcement first
     await enforceGroupMembershipForTab(tab, currentGrouping);
+
+    if (!groupIdentity) return;
 
     let matches = await getEligibleMatchingTabs(tab.windowId, groupIdentity);
     // Respect threshold for both creating new groups and attaching to existing managed groups.
@@ -612,8 +619,6 @@ async function forceReevaluateAllWindows() {
             if (!isWebUrl(parsed)) continue;
 
             const grouping = resolveTabGrouping(tab);
-            if (!grouping?.identity) continue;
-
             await maybeGroupTab(tab, grouping);
         }
 
@@ -700,7 +705,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
         const initialUrl = initialUrlByTab.get(tabId);
 
         // If enabled, ignore grouping while the tab is still on its initial URL.
-        if (IGNORE_INITIAL_TAB_URL_FOR_GROUPING && initialUrl && currentUrl === initialUrl) {
+        if (IGNORE_INITIAL_TAB_URL && initialUrl && currentUrl === initialUrl) {
             // Still update lastSeenUrlByTab so we don’t loop.
             lastSeenUrlByTab.set(tabId, currentUrl);
             return;

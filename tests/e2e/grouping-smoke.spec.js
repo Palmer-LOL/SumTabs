@@ -73,3 +73,62 @@ test("preserves a user-created non-managed group during reevaluation", async ({ 
     tabIds: created.tabs.map((tab) => tab.id).sort((a, b) => a - b),
   });
 });
+
+test("ignored tabs neither form nor join managed groups", async ({ context, httpServer, extensionApi }) => {
+  const firstUrl = httpServer.url("/ignored-a");
+  const secondUrl = httpServer.url("/ignored-b");
+  await extensionApi.setStorage({ ignoredHostnames: ["127.0.0.1"] });
+  await openHttpPage(context, firstUrl);
+  await openHttpPage(context, secondUrl);
+  await extensionApi.forceReevaluate();
+
+  await expect.poll(async () => (await extensionApi.tabsByUrls([firstUrl, secondUrl])).map((tab) => tab?.groupId)).toEqual([
+    noGroupId,
+    noGroupId,
+  ]);
+});
+
+test("reevaluation removes ignored unpinned tabs from managed groups but preserves user groups", async ({ context, httpServer, extensionApi }) => {
+  const managedUrls = [httpServer.url("/managed-a"), httpServer.url("/managed-b")];
+  const userUrls = [httpServer.url("/user-a"), httpServer.url("/user-b")];
+  for (const url of [...managedUrls, ...userUrls]) await openHttpPage(context, url);
+  const userGroup = await extensionApi.createUserGroup(userUrls, "Manual ignored hosts");
+  await extensionApi.forceReevaluate();
+  await expectTabsGrouped(extensionApi, managedUrls);
+
+  await extensionApi.setStorage({ ignoredHostnames: ["127.0.0.1"] });
+  await extensionApi.forceReevaluate();
+
+  await expect.poll(async () => {
+    const managedTabs = await extensionApi.tabsByUrls(managedUrls);
+    const userTabs = await extensionApi.tabsByUrls(userUrls);
+    return {
+      managedGroupIds: managedTabs.map((tab) => tab?.groupId),
+      userGroupIds: userTabs.map((tab) => tab?.groupId),
+      userTitle: (await extensionApi.groupById(userGroup.groupId)).title,
+    };
+  }).toEqual({
+    managedGroupIds: [noGroupId, noGroupId],
+    userGroupIds: [userGroup.groupId, userGroup.groupId],
+    userTitle: "Manual ignored hosts",
+  });
+});
+
+test("ignored-host reevaluation bypasses the unified initial-URL exemption", async ({ context, httpServer, extensionApi }) => {
+  const urls = [httpServer.url("/initial-managed-a"), httpServer.url("/initial-managed-b")];
+  await extensionApi.setStorage({
+    ignoreInitialTabUrlForGrouping: false,
+    ignoreInitialTabUrlForEnforcement: true,
+  });
+  for (const url of urls) await openHttpPage(context, url);
+  await extensionApi.forceReevaluate();
+  await expectTabsGrouped(extensionApi, urls);
+
+  await extensionApi.setStorage({ ignoredHostnames: ["127.0.0.1"] });
+  await extensionApi.forceReevaluate();
+
+  await expect.poll(async () => (await extensionApi.tabsByUrls(urls)).map((tab) => tab?.groupId)).toEqual([
+    noGroupId,
+    noGroupId,
+  ]);
+});

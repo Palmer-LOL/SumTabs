@@ -244,6 +244,24 @@
 						class="disclosure-card__content settings__section-content"
 					>
 						<div class="settings__row">
+							<label class="settings__field-label" for="ignoredHostnames"
+								>Ignore these specific hostnames</label
+							>
+							<textarea
+								class="textarea"
+								id="ignoredHostnames"
+								aria-describedby="ignoredHostnamesHelp ignoredHostnamesValidation"
+								spellcheck="false"
+							></textarea>
+							<div class="settings__help-text" id="ignoredHostnamesHelp">
+								Enter one exact hostname per line. Rules do not inherit to
+								subdomains, override bundles and separation rules, and keep
+								matching tabs unmanaged.
+							</div>
+							<div class="validation-message" id="ignoredHostnamesValidation" role="status"></div>
+						</div>
+
+						<div class="settings__row">
 							<label
 								class="settings__field-label"
 								for="commonMultipartSuffixes"
@@ -514,44 +532,22 @@
 							<label class="settings__field-label checkbox-field">
 								<input
 									class="checkbox-field__input"
-									id="ignoreInitialTabUrlForGrouping"
+									id="ignoreInitialTabUrl"
 									type="checkbox"
-									aria-describedby="ignoreInitialGroupingHelp"
+									aria-describedby="ignoreInitialTabUrlHelp"
 								/>
 								<span
-									>Ignore a tab’s initial URL when deciding
-									its group</span
+									>Ignore a tab’s initial URL while grouping
+									and enforcing placement</span
 								>
 							</label>
 							<div
 								class="settings__help-text"
-								id="ignoreInitialGroupingHelp"
+								id="ignoreInitialTabUrlHelp"
 							>
 								Wait for a newly created tab to navigate away
 								from temporary pages such as the new-tab page
-								before assigning it to a group.
-							</div>
-						</div>
-
-						<div class="settings__row settings__choice-row">
-							<label class="settings__field-label checkbox-field">
-								<input
-									class="checkbox-field__input"
-									id="ignoreInitialTabUrlForEnforcement"
-									type="checkbox"
-									aria-describedby="ignoreInitialEnforcementHelp"
-								/>
-								<span
-									>Ignore a tab’s initial URL when enforcing
-									group placement</span
-								>
-							</label>
-							<div
-								class="settings__help-text"
-								id="ignoreInitialEnforcementHelp"
-							>
-								Avoid moving a newly created tab until its
-								destination URL is available.
+								before assigning it to or enforcing its group.
 							</div>
 						</div>
 					</div>
