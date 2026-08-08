@@ -557,6 +557,20 @@
 								before assigning it to or enforcing its group.
 							</div>
 						</div>
+						<div class="settings__row">
+							<div class="settings__field-label">Restore defaults</div>
+							<div class="settings__help-text">
+								Load every default setting into the editor. Nothing changes
+								until you select Save changes.
+							</div>
+							<button
+								class="button button--danger-secondary"
+								id="reset"
+								type="button"
+							>
+								Load default settings
+							</button>
+						</div>
 					</div>
 				</details>
 
@@ -622,11 +636,11 @@
 				</button>
 				<div class="settings__action-buttons">
 					<button
-						class="button button--danger-secondary"
-						id="reset"
+						class="button"
+						id="discard"
 						type="button"
 					>
-						Reset to defaults
+						Discard changes
 					</button>
 					<button
 						class="button button--primary"

@@ -527,8 +527,22 @@ function loadDefaultsIntoEditor() {
     );
     if (!confirmed) return;
 
+    if (ignoredHostnamesConflict) {
+        acceptIgnoredHostnamesBaseline(ignoredHostnamesConflict.storedValue);
+    } else {
+        clearIgnoredHostnamesConflict();
+    }
     populateForm(DEFAULTS);
     updateSaveState({ message: "Defaults loaded. Save changes to apply them.", state: "warning" });
+}
+
+async function discardChanges() {
+    const stored = await chrome.storage.sync.get(DEFAULTS);
+    populateForm(stored);
+    savedSnapshot = captureUiSnapshot();
+    ignoredHostnamesBaseline = storedIgnoredHostnamesText(stored);
+    clearIgnoredHostnamesConflict();
+    updateSaveState({ message: "Unsaved changes discarded.", state: "neutral" });
 }
 
 function bindEvents() {
@@ -576,6 +590,12 @@ function bindEvents() {
         save().catch((error) => {
             console.error("Failed to save SumTabs settings", error);
             updateSaveState({ message: "Could not save changes. Try again.", state: "error" });
+        });
+    });
+    $("discard").addEventListener("click", () => {
+        discardChanges().catch((error) => {
+            console.error("Failed to discard SumTabs settings changes", error);
+            updateSaveState({ message: "Could not reload saved settings. Try again.", state: "error" });
         });
     });
     $("reset").addEventListener("click", loadDefaultsIntoEditor);
