@@ -23,6 +23,7 @@ test("loads the popup page modules and core controls inside the extension origin
   await expect(popupPage.getByText("Current tab", { exact: true })).toBeVisible();
   await expect(popupPage.getByText("Current window", { exact: true })).toBeVisible();
   await expect(popupPage.getByText("More actions", { exact: true })).toBeVisible();
+  await expect(popupPage.getByRole("checkbox", { name: "Ignore this hostname", includeHidden: true })).toBeAttached();
 
   const sectionIds = await popupPage
     .locator(".popup__sections > .popup__section")
