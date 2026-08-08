@@ -557,6 +557,37 @@
 								before assigning it to or enforcing its group.
 							</div>
 						</div>
+						<div class="settings__row">
+							<div class="settings__field-label">Backup and restore</div>
+							<div class="settings__help-text">
+								Export synchronized settings to a JSON file, or import a
+								previous SumTabs backup. Appearance is stored separately and
+								is not included.
+							</div>
+							<div class="settings__button-row">
+								<button class="button" id="exportSettings" type="button">
+									Export settings
+								</button>
+								<button class="button" id="importSettings" type="button">
+									Import settings
+								</button>
+								<input id="importSettingsFile" type="file" accept="application/json,.json" hidden />
+							</div>
+						</div>
+						<div class="settings__row">
+							<div class="settings__field-label">Restore defaults</div>
+							<div class="settings__help-text">
+								Load every default setting into the editor. Nothing changes
+								until you select Save changes.
+							</div>
+							<button
+								class="button button--danger-secondary"
+								id="reset"
+								type="button"
+							>
+								Load default settings
+							</button>
+						</div>
 					</div>
 				</details>
 
@@ -622,11 +653,11 @@
 				</button>
 				<div class="settings__action-buttons">
 					<button
-						class="button button--danger-secondary"
-						id="reset"
+						class="button"
+						id="discard"
 						type="button"
 					>
-						Reset to defaults
+						Discard changes
 					</button>
 					<button
 						class="button button--primary"

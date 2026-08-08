@@ -1,4 +1,5 @@
 import { test, expect } from "./fixtures.js";
+import { readFile } from "node:fs/promises";
 
 test.beforeEach(async ({ extensionApi }) => {
   await extensionApi.resetStorage();
@@ -24,6 +25,58 @@ test("saves grouping threshold through the real settings UI and persists it in s
 
   await settingsPage.reload();
   await expect(settingsPage.getByLabel("Group when at least this many matching tabs exist")).toHaveValue("3");
+});
+
+test("discards editor changes without replacing saved settings", async ({ extensionPage, extensionApi }) => {
+  await extensionApi.setStorage({ minTabsToGroup: 3 });
+  const settingsPage = await extensionPage("settings.html");
+  const threshold = settingsPage.getByLabel("Group when at least this many matching tabs exist");
+
+  await threshold.fill("4");
+  await settingsPage.getByRole("button", { name: "Discard changes" }).click();
+
+  await expect(threshold).toHaveValue("3");
+  await expect(settingsPage.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  await expect.poll(async () => (await extensionApi.getStorage()).minTabsToGroup).toBe(3);
+});
+
+test("exports synchronized settings and imports a backup", async ({ extensionPage, extensionApi }) => {
+  await extensionApi.setStorage({ minTabsToGroup: 3, futureSetting: { retained: true } });
+  const settingsPage = await extensionPage("settings.html");
+  await settingsPage.getByText("Advanced behavior").click();
+
+  const downloadPromise = settingsPage.waitForEvent("download");
+  await settingsPage.getByRole("button", { name: "Export settings" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/^sumtabs-settings-\d{4}-\d{2}-\d{2}\.json$/);
+  const exported = JSON.parse(await readFile(await download.path(), "utf8"));
+  expect(exported).toMatchObject({
+    format: "sumtabs-settings",
+    version: 1,
+    settings: {
+      autoGroupPrefix: "∑ ",
+      minTabsToGroup: 3,
+      futureSetting: { retained: true },
+    },
+  });
+
+  const imported = structuredClone(exported);
+  imported.settings.minTabsToGroup = 4;
+  imported.settings.customDomainGroups = [{ title: "Restored", domains: ["example.com", "example.org"] }];
+  settingsPage.once("dialog", (dialog) => dialog.accept());
+  await settingsPage.locator("#importSettingsFile").setInputFiles({
+    name: "sumtabs-settings.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(imported)),
+  });
+
+  await expect(settingsPage.getByRole("status").filter({ hasText: "Settings imported." })).toBeVisible();
+  await expect(settingsPage.getByLabel("Group when at least this many matching tabs exist")).toHaveValue("4");
+  await expect.poll(async () => await extensionApi.getStorage()).toMatchObject({
+    minTabsToGroup: 4,
+    futureSetting: { retained: true },
+    customDomainGroups: [{ title: "Restored", domains: ["example.com", "example.org"] }],
+  });
 });
 
 test("saves and reloads canonical ignored hostnames through sync storage", async ({ extensionPage, extensionApi }) => {
@@ -121,6 +174,24 @@ test("requires an explicit choice for simultaneous local and external ignore-lis
   await expect(save).toBeEnabled();
   await save.click();
   await expect.poll(async () => (await extensionApi.getStorage()).ignoredHostnames).toEqual(["second-draft.example"]);
+});
+
+test("treats loading defaults as an explicit resolution of an ignore-list conflict", async ({ extensionPage, extensionApi }) => {
+  await extensionApi.setStorage({ ignoredHostnames: ["original.example"] });
+  const settingsPage = await extensionPage("settings.html");
+  await settingsPage.getByText("Site separation rules").click();
+  await settingsPage.getByLabel("Ignore these specific hostnames").fill("draft.example");
+  await extensionApi.setStorage({ ignoredHostnames: ["external.example"] });
+  await expect(settingsPage.getByRole("alert")).toBeVisible();
+
+  settingsPage.once("dialog", (dialog) => dialog.accept());
+  await settingsPage.getByText("Advanced behavior").click();
+  await settingsPage.getByRole("button", { name: "Load default settings" }).click();
+
+  await expect(settingsPage.getByRole("alert")).toBeHidden();
+  await expect(settingsPage.getByRole("button", { name: "Save changes" })).toBeEnabled();
+  await settingsPage.getByRole("button", { name: "Save changes" }).click();
+  await expect.poll(async () => (await extensionApi.getStorage()).ignoredHostnames).toEqual([]);
 });
 
 test("coordinates the final conflict check and write with popup ignore updates", async ({ extensionPage, extensionApi }) => {
