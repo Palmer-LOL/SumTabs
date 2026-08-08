@@ -119,6 +119,12 @@ To configure behavior:
 
 SumTabs targets Chromium-based browsers that support the Tab Groups API (e.g. Chrome, Brave, Edge). Firefox does not currently support this API.
 
+### Known limitation: tab changes during forced reevaluation
+
+SumTabs preserves the tab that was active when forced reevaluation began. If the user changes tabs while reevaluation is still running, SumTabs may restore the earlier tab when processing completes. Chromium does not currently expose enough activation-origin information for SumTabs to distinguish that user selection reliably from grouping-induced or extension-induced activation.
+
+This race condition is intentionally accepted because avoiding it with heuristic event tracking could make active-tab preservation less reliable. See [issue #98](https://github.com/Palmer-LOL/SumTabs/issues/98) for the technical rationale and conditions for revisiting the decision.
+
 ---
 
 ## License

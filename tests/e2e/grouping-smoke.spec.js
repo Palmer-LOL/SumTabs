@@ -80,13 +80,36 @@ test("ignored tabs neither form nor join managed groups", async ({ context, http
   await extensionApi.setStorage({ ignoredHostnames: ["127.0.0.1"] });
   await openHttpPage(context, firstUrl);
   await openHttpPage(context, secondUrl);
-  await extensionApi.forceReevaluate();
+  const createdTabs = await extensionApi.forceReevaluateTrackingCreatedTabs();
 
   await expect.poll(async () => (await extensionApi.tabsByUrls([firstUrl, secondUrl])).map((tab) => tab?.groupId)).toEqual([
     noGroupId,
     noGroupId,
   ]);
+  expect(createdTabs, "a no-op reevaluation should not create a transient about:blank render-workaround tab")
+    .not.toContainEqual(expect.objectContaining({ url: "about:blank" }));
 });
+
+for (const activePosition of ["first", "middle", "last"]) {
+  test(`reevaluation preserves the ${activePosition} active tab while newly grouping ignored tabs`, async ({ context, httpServer, extensionApi }) => {
+    const urls = [
+      httpServer.url(`/active-preservation-${activePosition}-a`),
+      httpServer.url(`/active-preservation-${activePosition}-b`),
+      httpServer.url(`/active-preservation-${activePosition}-c`),
+    ];
+    const activeIndex = { first: 0, middle: 1, last: 2 }[activePosition];
+
+    await extensionApi.setStorage({ ignoredHostnames: ["127.0.0.1"] });
+    for (const url of urls) await openHttpPage(context, url);
+    await extensionApi.setStorage({ ignoredHostnames: [] });
+    await extensionApi.forceReevaluateWithActiveTab(urls[activeIndex]);
+
+    await expectTabsGrouped(extensionApi, urls);
+    await expect.poll(async () => (await extensionApi.tabByUrl(urls[activeIndex]))?.active, {
+      message: `the originally active ${activePosition} tab should remain active after forced grouping`,
+    }).toBe(true);
+  });
+}
 
 test("reevaluation removes ignored unpinned tabs from managed groups but preserves user groups", async ({ context, httpServer, extensionApi }) => {
   const managedUrls = [httpServer.url("/managed-a"), httpServer.url("/managed-b")];

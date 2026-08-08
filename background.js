@@ -268,14 +268,16 @@ async function expandGroupIfCollapsed(groupId) {
     } catch {}
 }
 
-async function runChromiumGroupTitleRenderWorkaround(windowId) {
+async function runChromiumGroupTitleRenderWorkaround(windowId, originalActiveTabId = null) {
     if (windowId == null) return;
 
     let blankTabId = null;
 
     try {
-        const [activeTab] = await chrome.tabs.query({ windowId, active: true });
-        if (!activeTab?.id) return;
+        const [activeTab] = originalActiveTabId == null
+            ? await chrome.tabs.query({ windowId, active: true })
+            : [await chrome.tabs.get(originalActiveTabId)];
+        if (!activeTab?.id || activeTab.windowId !== windowId) return;
 
         const collapseStateByGroup = new Map();
 
@@ -486,7 +488,7 @@ async function enforceGroupMembershipForTab(tab, currentGrouping) {
     }
 }
 
-async function maybeGroupTab(tab, currentGrouping) {
+async function maybeGroupTab(tab, currentGrouping, originalActiveTabId = null) {
     if (!tab || tab.id == null || tab.windowId == null) return;
     if (tab.pinned) return;
 
@@ -547,7 +549,7 @@ async function maybeGroupTab(tab, currentGrouping) {
         await ensureGroupColor(newGroupId, desiredColor);
         await expandGroupIfCollapsed(newGroupId);
         await keepManagedGroupsAtFrontInWindow(tab.windowId);
-        await runChromiumGroupTitleRenderWorkaround(tab.windowId);
+        await runChromiumGroupTitleRenderWorkaround(tab.windowId, originalActiveTabId);
     } catch {}
 }
 
@@ -611,6 +613,7 @@ async function forceReevaluateAllWindows() {
         if (windowId == null) continue;
 
         const tabs = await chrome.tabs.query({ windowId });
+        const originalActiveTabId = tabs.find(tab => tab.active)?.id ?? null;
 
         for (const tab of tabs) {
             if (!tab || tab.id == null || tab.pinned || tab.windowId == null) continue;
@@ -619,16 +622,10 @@ async function forceReevaluateAllWindows() {
             if (!isWebUrl(parsed)) continue;
 
             const grouping = resolveTabGrouping(tab);
-            await maybeGroupTab(tab, grouping);
+            await maybeGroupTab(tab, grouping, originalActiveTabId);
         }
 
         await cleanupManagedSingletonGroupsInWindow(windowId);
-        await keepManagedGroupsAtFrontInWindow(windowId);
-
-        if (COLLAPSE_OTHER_GROUPS_ON_NAV_EVENTS) {
-            const [activeTab] = await chrome.tabs.query({ windowId, active: true });
-            await collapseAllGroupsExcept(windowId, activeTab?.groupId ?? NONE);
-        }
 
         const refreshedTabs = await chrome.tabs.query({ windowId });
 
@@ -644,6 +641,25 @@ async function forceReevaluateAllWindows() {
 
             const grouping = resolveTabGrouping(tab);
             await enforceGroupMembershipForTab(tab, grouping);
+        }
+
+        await keepManagedGroupsAtFrontInWindow(windowId);
+        let restoredActiveTab = null;
+        if (originalActiveTabId != null) {
+            try {
+                const originalActiveTab = await chrome.tabs.get(originalActiveTabId);
+                if (originalActiveTab?.windowId === windowId) {
+                    restoredActiveTab = await chrome.tabs.update(originalActiveTabId, { active: true });
+                }
+            } catch {}
+        }
+
+        if (COLLAPSE_OTHER_GROUPS_ON_NAV_EVENTS) {
+            let activeTabForCollapse = restoredActiveTab;
+            if (!activeTabForCollapse) {
+                [activeTabForCollapse] = await chrome.tabs.query({ windowId, active: true });
+            }
+            await collapseAllGroupsExcept(windowId, activeTabForCollapse?.groupId ?? NONE);
         }
     }
 }
