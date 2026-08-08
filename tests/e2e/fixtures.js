@@ -136,6 +136,15 @@ export const test = base.extend({
       getStorage: () => evaluateInWorker("return await callbackify(chrome.storage.sync.get.bind(chrome.storage.sync), null);"),
       setStorage: (values) => evaluateInWorker(`await callbackify(chrome.storage.sync.set.bind(chrome.storage.sync), ${JSON.stringify(values)}); return true;`),
       forceReevaluate: () => sendExtensionMessage({ type: "sumtabs:force-reevaluate" }),
+      forceReevaluateWithActiveTab: async (url) => {
+        const page = await openExtensionPage(context, extensionId, "settings.html");
+        try {
+          await evaluateInWorker(`const targetUrl = ${JSON.stringify(url)}; const tabs = await callbackify(chrome.tabs.query.bind(chrome.tabs), {}); const tab = tabs.find((candidate) => candidate.url === targetUrl); if (!tab) throw new Error('Tab not found for activation'); await callbackify(chrome.tabs.update.bind(chrome.tabs), tab.id, { active: true }); return true;`);
+          return await page.evaluate((payload) => chrome.runtime.sendMessage(payload), { type: "sumtabs:force-reevaluate" });
+        } finally {
+          await page.close();
+        }
+      },
       tabByUrl: (url) => evaluateInWorker(`const targetUrl = ${JSON.stringify(url)}; const tabs = await callbackify(chrome.tabs.query.bind(chrome.tabs), {}); return tabs.find((tab) => tab.url === targetUrl) || null;`),
       tabsByUrls: (urls) => evaluateInWorker(`const urls = ${JSON.stringify(urls)}; const tabs = await callbackify(chrome.tabs.query.bind(chrome.tabs), {}); return urls.map((url) => tabs.find((tab) => tab.url === url) || null);`),
       groupById: (groupId) => evaluateInWorker(`return await callbackify(chrome.tabGroups.get.bind(chrome.tabGroups), ${JSON.stringify(groupId)});`),
