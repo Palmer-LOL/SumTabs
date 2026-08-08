@@ -34,6 +34,7 @@ const forceReevaluateButton = document.getElementById("forceReevaluate");
 
 let quickActionContext = null;
 let quickActionInFlight = false;
+const IGNORED_HOSTNAMES_STORAGE_LOCK = "sumtabs:ignored-hostnames-storage";
 
 function announcePopupFeedback(message) {
 	if (!popupFeedbackEl) return;
@@ -57,16 +58,6 @@ async function requestForceReevaluate() {
 	});
 	if (response?.ok) return response;
 	throw new Error(response?.error || "Could not reapply rules.");
-}
-
-async function refreshOpenSettingsTabs() {
-	const settingsUrl = chrome.runtime.getURL("settings.html");
-	const settingsTabs = await chrome.tabs.query({ url: settingsUrl });
-	await Promise.all(
-		settingsTabs
-			.filter((tab) => Number.isInteger(tab.id))
-			.map((tab) => chrome.tabs.reload(tab.id)),
-	);
 }
 
 function normalizeBundleTitle(group, index) {
@@ -322,16 +313,17 @@ async function toggleIgnoreAction() {
 	renderQuickActions(quickActionContext);
 
 	try {
-		await updateSyncList("ignoredHostnames", (currentValues) => {
-			const nextValues = normalizeLowerList(currentValues);
-			if (quickActionContext.ignoreActionEnabled) {
-				nextValues.delete(quickActionContext.hostname);
-			} else {
-				nextValues.add(quickActionContext.hostname);
-			}
-			return nextValues;
+		await navigator.locks.request(IGNORED_HOSTNAMES_STORAGE_LOCK, async () => {
+			await updateSyncList("ignoredHostnames", (currentValues) => {
+				const nextValues = normalizeLowerList(currentValues);
+				if (quickActionContext.ignoreActionEnabled) {
+					nextValues.delete(quickActionContext.hostname);
+				} else {
+					nextValues.add(quickActionContext.hostname);
+				}
+				return nextValues;
+			});
 		});
-		await refreshOpenSettingsTabs();
 		await requestForceReevaluate();
 
 		await renderActiveTabStatus();
