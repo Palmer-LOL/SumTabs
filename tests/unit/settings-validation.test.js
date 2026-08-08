@@ -132,6 +132,19 @@ describe("settings backup validation", () => {
         });
     });
 
+    it("rejects exact domain rules shared by multiple bundles after canonicalization", () => {
+        const settings = {
+            ...structuredClone(DEFAULTS),
+            customDomainGroups: [
+                { title: "First", domains: ["example.com"] },
+                { title: "Second", domains: [" EXAMPLE.COM "] },
+            ],
+        };
+
+        expect(() => validateImportedSettings(settings, DEFAULTS.autoGroupPrefix))
+            .toThrow("contains a domain rule used by more than one bundle");
+    });
+
     it.each([
         ["autoGroupPrefix", "other", "required SumTabs managed-group prefix"],
         ["minTabsToGroup", "2", "must be a whole number"],

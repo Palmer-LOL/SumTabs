@@ -1,4 +1,4 @@
-import { parseCustomDomainRule } from "./grouping.js";
+import { getCustomDomainBundleEntryConflicts, parseCustomDomainRule } from "./grouping.js";
 
 export const MIN_GROUPING_THRESHOLD = 2;
 export const VALID_GROUP_COLORS = new Set(["grey", "blue", "red", "yellow", "green", "pink", "purple", "cyan", "orange"]);
@@ -168,6 +168,9 @@ export function validateImportedSettings(settings, requiredManagedGroupPrefix) {
             if (parseDomainsTextarea(group.domainsText).invalidEntries.length) {
                 throw new Error(`The backup setting “customDomainGroups” contains an invalid rule in bundle ${index + 1}.`);
             }
+        }
+        if (getCustomDomainBundleEntryConflicts(groupsForPersistence(groups)).length) {
+            throw new Error("The backup setting “customDomainGroups” contains a domain rule used by more than one bundle.");
         }
     }
 
