@@ -57,13 +57,13 @@ test("uses one initial-URL toggle and keeps both legacy storage keys aligned", a
 
   const initialUrlToggle = settingsPage.getByLabel("Ignore a tab’s initial URL while grouping and enforcing placement");
   await expect(initialUrlToggle).not.toBeChecked();
-  await initialUrlToggle.check();
+  await settingsPage.getByLabel("Group when at least this many matching tabs exist").fill("3");
   await settingsPage.getByRole("button", { name: "Save changes" }).click();
 
   await expect.poll(async () => {
     const stored = await extensionApi.getStorage();
     return [stored.ignoreInitialTabUrlForGrouping, stored.ignoreInitialTabUrlForEnforcement];
-  }).toEqual([true, true]);
+  }).toEqual([false, false]);
 });
 
 test("preserves an unsaved bundle draft while a clean ignore list updates live", async ({ extensionPage, extensionApi }) => {
@@ -98,6 +98,15 @@ test("requires an explicit choice for simultaneous local and external ignore-lis
   await extensionApi.setStorage({ ignoredHostnames: ["popup.example"] });
   await expect(settingsPage.getByRole("alert")).toContainText("stored ignore list changed");
   await expect(ignored).toHaveValue("my-draft.example");
+  await expect(save).toBeDisabled();
+
+  await extensionApi.setStorage({ ignoredHostnames: ["original.example"] });
+  await expect(settingsPage.getByRole("alert")).toBeHidden();
+  await expect(ignored).toHaveValue("my-draft.example");
+  await expect(save).toBeEnabled();
+
+  await extensionApi.setStorage({ ignoredHostnames: ["popup.example"] });
+  await expect(settingsPage.getByRole("alert")).toContainText("stored ignore list changed");
   await expect(save).toBeDisabled();
 
   await settingsPage.getByRole("button", { name: "Use current stored value" }).click();
