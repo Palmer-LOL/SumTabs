@@ -24,6 +24,7 @@ let loading = true;
 let savingIgnoredHostnamesValue = null;
 let ignoredHostnamesBaseline = "";
 let ignoredHostnamesConflict = null;
+const IGNORED_HOSTNAMES_STORAGE_LOCK = "sumtabs:ignored-hostnames-storage";
 
 function storedIgnoredHostnamesText(settings) {
     return arrayToLines(settings.ignoredHostnames ?? DEFAULTS.ignoredHostnames);
@@ -454,48 +455,51 @@ async function save() {
         customDomainGroups: buildGroupsForPersistence(customGroupsState),
     };
 
-    // Read immediately before writing so an external quick action cannot be
-    // overwritten by stale values from this page.
-    const latest = await chrome.storage.sync.get(DEFAULTS);
-    const latestIgnoredHostnames = storedIgnoredHostnamesText(latest);
     const localIgnoredHostnames = arrayToLines(ignoredHostnames.validHostnames);
-    if (latestIgnoredHostnames !== ignoredHostnamesBaseline) {
-        if ($("ignoredHostnames").value === ignoredHostnamesBaseline) {
-            acceptIgnoredHostnamesBaseline(latestIgnoredHostnames, { updateEditor: true });
-        } else if (latestIgnoredHostnames === localIgnoredHostnames) {
-            acceptIgnoredHostnamesBaseline(latestIgnoredHostnames);
-        } else {
-            showIgnoredHostnamesConflict(latestIgnoredHostnames);
-            return;
-        }
-    }
-
-    const baseline = JSON.parse(savedSnapshot);
-    const current = JSON.parse(captureUiSnapshot());
-    const payload = {};
-    const copyIfChanged = (uiKey, ...storageKeys) => {
-        if (JSON.stringify(current[uiKey]) === JSON.stringify(baseline[uiKey])) return;
-        for (const storageKey of storageKeys) payload[storageKey] = editorValues[storageKey];
-    };
-    copyIfChanged("minTabsToGroup", "minTabsToGroup");
-    copyIfChanged("collapseOtherGroupsOnNavEvents", "collapseOtherGroupsOnNavEvents");
-    copyIfChanged("keepManagedGroupsAtFront", "keepManagedGroupsAtFront");
-    copyIfChanged("ungroupSingletonManagedGroups", "ungroupSingletonManagedGroups");
-    copyIfChanged("ignoreInitialTabUrl", "ignoreInitialTabUrlForGrouping", "ignoreInitialTabUrlForEnforcement");
-    copyIfChanged("commonMultipartSuffixes", "commonMultipartSuffixes");
-    copyIfChanged("excludedFromRootCollapse", "excludedFromRootCollapse");
-    copyIfChanged("ignoredHostnames", "ignoredHostnames");
-    copyIfChanged("customDomainGroups", "customDomainGroups");
-
     $("save").disabled = true;
     setStatus("Saving…", "neutral");
 
     try {
-        savingIgnoredHostnamesValue = Object.hasOwn(payload, "ignoredHostnames")
-            ? arrayToLines(payload.ignoredHostnames)
-            : null;
-        await chrome.storage.sync.set(payload);
-        const savedSettings = { ...latest, ...payload };
+        const savedSettings = await navigator.locks.request(IGNORED_HOSTNAMES_STORAGE_LOCK, async () => {
+            // Keep the conflict check and write in one critical section shared
+            // with the popup so its quick action cannot land between them.
+            const latest = await chrome.storage.sync.get(DEFAULTS);
+            const latestIgnoredHostnames = storedIgnoredHostnamesText(latest);
+            if (latestIgnoredHostnames !== ignoredHostnamesBaseline) {
+                if ($("ignoredHostnames").value === ignoredHostnamesBaseline) {
+                    acceptIgnoredHostnamesBaseline(latestIgnoredHostnames, { updateEditor: true });
+                } else if (latestIgnoredHostnames === localIgnoredHostnames) {
+                    acceptIgnoredHostnamesBaseline(latestIgnoredHostnames);
+                } else {
+                    showIgnoredHostnamesConflict(latestIgnoredHostnames);
+                    return null;
+                }
+            }
+
+            const baseline = JSON.parse(savedSnapshot);
+            const current = JSON.parse(captureUiSnapshot());
+            const payload = {};
+            const copyIfChanged = (uiKey, ...storageKeys) => {
+                if (JSON.stringify(current[uiKey]) === JSON.stringify(baseline[uiKey])) return;
+                for (const storageKey of storageKeys) payload[storageKey] = editorValues[storageKey];
+            };
+            copyIfChanged("minTabsToGroup", "minTabsToGroup");
+            copyIfChanged("collapseOtherGroupsOnNavEvents", "collapseOtherGroupsOnNavEvents");
+            copyIfChanged("keepManagedGroupsAtFront", "keepManagedGroupsAtFront");
+            copyIfChanged("ungroupSingletonManagedGroups", "ungroupSingletonManagedGroups");
+            copyIfChanged("ignoreInitialTabUrl", "ignoreInitialTabUrlForGrouping", "ignoreInitialTabUrlForEnforcement");
+            copyIfChanged("commonMultipartSuffixes", "commonMultipartSuffixes");
+            copyIfChanged("excludedFromRootCollapse", "excludedFromRootCollapse");
+            copyIfChanged("ignoredHostnames", "ignoredHostnames");
+            copyIfChanged("customDomainGroups", "customDomainGroups");
+
+            savingIgnoredHostnamesValue = Object.hasOwn(payload, "ignoredHostnames")
+                ? arrayToLines(payload.ignoredHostnames)
+                : null;
+            await chrome.storage.sync.set(payload);
+            return { ...latest, ...payload };
+        });
+        if (!savedSettings) return;
         populateForm(savedSettings);
         savedSnapshot = captureUiSnapshot();
         ignoredHostnamesBaseline = storedIgnoredHostnamesText(savedSettings);

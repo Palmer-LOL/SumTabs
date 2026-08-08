@@ -34,6 +34,7 @@ const forceReevaluateButton = document.getElementById("forceReevaluate");
 
 let quickActionContext = null;
 let quickActionInFlight = false;
+const IGNORED_HOSTNAMES_STORAGE_LOCK = "sumtabs:ignored-hostnames-storage";
 
 function announcePopupFeedback(message) {
 	if (!popupFeedbackEl) return;
@@ -312,14 +313,16 @@ async function toggleIgnoreAction() {
 	renderQuickActions(quickActionContext);
 
 	try {
-		await updateSyncList("ignoredHostnames", (currentValues) => {
-			const nextValues = normalizeLowerList(currentValues);
-			if (quickActionContext.ignoreActionEnabled) {
-				nextValues.delete(quickActionContext.hostname);
-			} else {
-				nextValues.add(quickActionContext.hostname);
-			}
-			return nextValues;
+		await navigator.locks.request(IGNORED_HOSTNAMES_STORAGE_LOCK, async () => {
+			await updateSyncList("ignoredHostnames", (currentValues) => {
+				const nextValues = normalizeLowerList(currentValues);
+				if (quickActionContext.ignoreActionEnabled) {
+					nextValues.delete(quickActionContext.hostname);
+				} else {
+					nextValues.add(quickActionContext.hostname);
+				}
+				return nextValues;
+			});
 		});
 		await requestForceReevaluate();
 

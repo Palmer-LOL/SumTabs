@@ -113,3 +113,29 @@ test("requires an explicit choice for simultaneous local and external ignore-lis
   await save.click();
   await expect.poll(async () => (await extensionApi.getStorage()).ignoredHostnames).toEqual(["second-draft.example"]);
 });
+
+test("coordinates the final conflict check and write with popup ignore updates", async ({ extensionPage, extensionApi }) => {
+  await extensionApi.setStorage({ ignoredHostnames: ["original.example"] });
+  const settingsPage = await extensionPage("settings.html");
+  const popupWriter = await extensionPage("settings.html");
+  await settingsPage.getByText("Site separation rules").click();
+  await settingsPage.getByLabel("Ignore these specific hostnames").fill("settings-draft.example");
+
+  await popupWriter.evaluate(() => {
+    globalThis.popupLockAcquired = false;
+    globalThis.popupLockTask = navigator.locks.request("sumtabs:ignored-hostnames-storage", async () => {
+      globalThis.popupLockAcquired = true;
+      await new Promise((resolve) => { globalThis.releasePopupLock = resolve; });
+      await chrome.storage.sync.set({ ignoredHostnames: ["popup.example"] });
+    });
+  });
+  await expect.poll(() => popupWriter.evaluate(() => globalThis.popupLockAcquired)).toBe(true);
+
+  await settingsPage.getByRole("button", { name: "Save changes" }).click();
+  await popupWriter.evaluate(() => globalThis.releasePopupLock());
+
+  await expect(settingsPage.getByRole("alert")).toContainText("stored ignore list changed");
+  await expect(settingsPage.getByLabel("Ignore these specific hostnames")).toHaveValue("settings-draft.example");
+  await expect.poll(async () => (await extensionApi.getStorage()).ignoredHostnames).toEqual(["popup.example"]);
+  await popupWriter.close();
+});
