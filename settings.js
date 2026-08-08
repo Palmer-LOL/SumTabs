@@ -69,6 +69,10 @@ function handleExternalIgnoredHostnames(value) {
     } else if (incomingValue !== ignoredHostnamesBaseline) {
         showIgnoredHostnamesConflict(incomingValue);
         return;
+    } else {
+        // The stored value returned to the baseline, so any conflict raised for
+        // an intermediate external value is no longer relevant.
+        clearIgnoredHostnamesConflict();
     }
     updateSaveState();
 }
@@ -487,7 +491,11 @@ async function save() {
             copyIfChanged("collapseOtherGroupsOnNavEvents", "collapseOtherGroupsOnNavEvents");
             copyIfChanged("keepManagedGroupsAtFront", "keepManagedGroupsAtFront");
             copyIfChanged("ungroupSingletonManagedGroups", "ungroupSingletonManagedGroups");
-            copyIfChanged("ignoreInitialTabUrl", "ignoreInitialTabUrlForGrouping", "ignoreInitialTabUrlForEnforcement");
+            // Always align both legacy keys with the combined control. Older
+            // synced versions read these independently, and may have left them
+            // divergent even when this page's combined value is unchanged.
+            payload.ignoreInitialTabUrlForGrouping = editorValues.ignoreInitialTabUrlForGrouping;
+            payload.ignoreInitialTabUrlForEnforcement = editorValues.ignoreInitialTabUrlForEnforcement;
             copyIfChanged("commonMultipartSuffixes", "commonMultipartSuffixes");
             copyIfChanged("excludedFromRootCollapse", "excludedFromRootCollapse");
             copyIfChanged("ignoredHostnames", "ignoredHostnames");
