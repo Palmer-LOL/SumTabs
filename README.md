@@ -88,7 +88,7 @@ To configure behavior:
 - Toggle **Collapse other groups when navigating/creating tabs** to enable or disable focus mode.
 - Set **Group when at least this many matching tabs exist** to control when grouping starts (minimum `2`, default `2`).
 - Toggle **Ungroup managed groups when only one tab remains** to remove singleton managed groups automatically (default is off, so singleton managed groups remain grouped).
-- Toggle **Ignore initial tab URL for grouping** and **Ignore initial tab URL for enforcement** to avoid grouping while tabs are still on their initial load.
+- Toggle **Ignore a tab’s initial URL while grouping and enforcing placement** to wait until newly created tabs navigate away from temporary initial pages before grouping or enforcing their placement.
 - Add entries under **Domain-wide subdomain separation rules** (one per line) to keep matching subdomain families separate when needed.
 - Add **Exact-host separation rules** (one per line) to keep specific hosts separate from their broader domain grouping.
 - Add hostnames under **Ignore these specific hostnames** (one per line), then select **Save changes**, to keep exact matches unmanaged. Reset loads the empty default into the editor; save to persist it.
