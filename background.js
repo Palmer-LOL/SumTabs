@@ -488,7 +488,7 @@ async function enforceGroupMembershipForTab(tab, currentGrouping) {
     }
 }
 
-async function maybeGroupTab(tab, currentGrouping) {
+async function maybeGroupTab(tab, currentGrouping, originalActiveTabId = null) {
     if (!tab || tab.id == null || tab.windowId == null) return;
     if (tab.pinned) return;
 
@@ -549,7 +549,7 @@ async function maybeGroupTab(tab, currentGrouping) {
         await ensureGroupColor(newGroupId, desiredColor);
         await expandGroupIfCollapsed(newGroupId);
         await keepManagedGroupsAtFrontInWindow(tab.windowId);
-        await runChromiumGroupTitleRenderWorkaround(tab.windowId);
+        await runChromiumGroupTitleRenderWorkaround(tab.windowId, originalActiveTabId);
     } catch {}
 }
 
@@ -622,7 +622,7 @@ async function forceReevaluateAllWindows() {
             if (!isWebUrl(parsed)) continue;
 
             const grouping = resolveTabGrouping(tab);
-            await maybeGroupTab(tab, grouping);
+            await maybeGroupTab(tab, grouping, originalActiveTabId);
         }
 
         await cleanupManagedSingletonGroupsInWindow(windowId);
@@ -644,8 +644,6 @@ async function forceReevaluateAllWindows() {
         }
 
         await keepManagedGroupsAtFrontInWindow(windowId);
-        await runChromiumGroupTitleRenderWorkaround(windowId, originalActiveTabId);
-
         let restoredActiveTab = null;
         if (originalActiveTabId != null) {
             try {

@@ -80,12 +80,14 @@ test("ignored tabs neither form nor join managed groups", async ({ context, http
   await extensionApi.setStorage({ ignoredHostnames: ["127.0.0.1"] });
   await openHttpPage(context, firstUrl);
   await openHttpPage(context, secondUrl);
-  await extensionApi.forceReevaluate();
+  const createdTabs = await extensionApi.forceReevaluateTrackingCreatedTabs();
 
   await expect.poll(async () => (await extensionApi.tabsByUrls([firstUrl, secondUrl])).map((tab) => tab?.groupId)).toEqual([
     noGroupId,
     noGroupId,
   ]);
+  expect(createdTabs, "a no-op reevaluation should not create a transient about:blank render-workaround tab")
+    .not.toContainEqual(expect.objectContaining({ url: "about:blank" }));
 });
 
 for (const activePosition of ["first", "middle", "last"]) {

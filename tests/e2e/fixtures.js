@@ -136,6 +136,15 @@ export const test = base.extend({
       getStorage: () => evaluateInWorker("return await callbackify(chrome.storage.sync.get.bind(chrome.storage.sync), null);"),
       setStorage: (values) => evaluateInWorker(`await callbackify(chrome.storage.sync.set.bind(chrome.storage.sync), ${JSON.stringify(values)}); return true;`),
       forceReevaluate: () => sendExtensionMessage({ type: "sumtabs:force-reevaluate" }),
+      forceReevaluateTrackingCreatedTabs: async () => {
+        await evaluateInWorker("globalThis.__sumtabsCreatedTabs = []; globalThis.__sumtabsCreatedTabsListener = (tab) => globalThis.__sumtabsCreatedTabs.push({ id: tab.id, url: tab.pendingUrl || tab.url || '' }); chrome.tabs.onCreated.addListener(globalThis.__sumtabsCreatedTabsListener); return true;");
+        try {
+          await sendExtensionMessage({ type: "sumtabs:force-reevaluate" });
+          return await evaluateInWorker("return globalThis.__sumtabsCreatedTabs || [];");
+        } finally {
+          await evaluateInWorker("if (globalThis.__sumtabsCreatedTabsListener) chrome.tabs.onCreated.removeListener(globalThis.__sumtabsCreatedTabsListener); delete globalThis.__sumtabsCreatedTabsListener; delete globalThis.__sumtabsCreatedTabs; return true;");
+        }
+      },
       forceReevaluateWithActiveTab: async (url) => {
         const page = await openExtensionPage(context, extensionId, "settings.html");
         try {
