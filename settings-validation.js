@@ -3,6 +3,19 @@ import { parseCustomDomainRule } from "./grouping.js";
 export const MIN_GROUPING_THRESHOLD = 2;
 export const VALID_GROUP_COLORS = new Set(["grey", "blue", "red", "yellow", "green", "pink", "purple", "cyan", "orange"]);
 
+const BOOLEAN_SETTING_KEYS = [
+    "collapseOtherGroupsOnNavEvents",
+    "keepManagedGroupsAtFront",
+    "ungroupSingletonManagedGroups",
+    "ignoreInitialTabUrlForGrouping",
+    "ignoreInitialTabUrlForEnforcement",
+];
+const HOSTNAME_LIST_SETTING_KEYS = [
+    "commonMultipartSuffixes",
+    "excludedFromRootCollapse",
+    "ignoredHostnames",
+];
+
 export function splitNonEmptyLines(text) {
     return String(text || "")
         .split(/\r?\n/)
@@ -115,6 +128,52 @@ export function parseHostnameRulesTextarea(text) {
         invalidEntries,
         canonicalText: validHostnames.join("\n"),
     };
+}
+
+export function validateImportedSettings(settings, requiredManagedGroupPrefix) {
+    if (settings.autoGroupPrefix !== requiredManagedGroupPrefix) {
+        throw new Error("The backup does not contain the required SumTabs managed-group prefix.");
+    }
+
+    if (Object.hasOwn(settings, "minTabsToGroup")
+        && (!Number.isInteger(settings.minTabsToGroup)
+            || settings.minTabsToGroup < MIN_GROUPING_THRESHOLD)) {
+        throw new Error(`The backup setting “minTabsToGroup” must be a whole number of ${MIN_GROUPING_THRESHOLD} or greater.`);
+    }
+
+    for (const key of BOOLEAN_SETTING_KEYS) {
+        if (!Object.hasOwn(settings, key)) continue;
+        if (typeof settings[key] !== "boolean") {
+            throw new Error(`The backup setting “${key}” must be true or false.`);
+        }
+    }
+
+    for (const key of HOSTNAME_LIST_SETTING_KEYS) {
+        if (!Object.hasOwn(settings, key)) continue;
+        if (!Array.isArray(settings[key]) || settings[key].some((value) => typeof value !== "string")) {
+            throw new Error(`The backup setting “${key}” must be an array of hostnames.`);
+        }
+        const parsed = parseHostnameRulesTextarea(settings[key].join("\n"));
+        if (parsed.invalidEntries.length) {
+            throw new Error(`The backup setting “${key}” contains an invalid hostname.`);
+        }
+    }
+
+    if (Object.hasOwn(settings, "customDomainGroups")) {
+        const groups = coerceGroupsFromJson(settings.customDomainGroups);
+        for (const [index, group] of groups.entries()) {
+            if (!group.title.trim()) {
+                throw new Error(`The backup setting “customDomainGroups” has no title for bundle ${index + 1}.`);
+            }
+            if (parseDomainsTextarea(group.domainsText).invalidEntries.length) {
+                throw new Error(`The backup setting “customDomainGroups” contains an invalid rule in bundle ${index + 1}.`);
+            }
+        }
+    }
+
+    // Return a copy of the entire payload so settings from newer versions are
+    // retained, while every setting understood by this version is validated.
+    return structuredClone(settings);
 }
 
 export function normalizeStoredGroups(groups) {

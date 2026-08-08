@@ -11,6 +11,7 @@ import {
     normalizeStoredGroups,
     parseDomainsTextarea,
     parseHostnameRulesTextarea,
+    validateImportedSettings,
 } from "./settings-validation.js";
 
 const $ = (id) => document.getElementById(id);
@@ -579,9 +580,7 @@ async function importSettingsFile(file) {
         || Array.isArray(backup.settings)) {
         throw new Error("The selected file is not a supported SumTabs settings backup.");
     }
-    if (backup.settings.autoGroupPrefix !== DEFAULTS.autoGroupPrefix) {
-        throw new Error("The backup does not contain the required SumTabs managed-group prefix.");
-    }
+    const importedSettings = validateImportedSettings(backup.settings, DEFAULTS.autoGroupPrefix);
     if (!window.confirm(
         "Import these settings now?\n\nMatching synchronized settings will be overwritten. Settings not included in the backup will be retained."
     )) return;
@@ -589,7 +588,7 @@ async function importSettingsFile(file) {
     loading = true;
     try {
         await navigator.locks.request(IGNORED_HOSTNAMES_STORAGE_LOCK, () => (
-            chrome.storage.sync.set(backup.settings)
+            chrome.storage.sync.set(importedSettings)
         ));
         const stored = await chrome.storage.sync.get(DEFAULTS);
         populateForm(stored);
