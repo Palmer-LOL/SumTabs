@@ -59,16 +59,6 @@ async function requestForceReevaluate() {
 	throw new Error(response?.error || "Could not reapply rules.");
 }
 
-async function refreshOpenSettingsTabs() {
-	const settingsUrl = chrome.runtime.getURL("settings.html");
-	const settingsTabs = await chrome.tabs.query({ url: settingsUrl });
-	await Promise.all(
-		settingsTabs
-			.filter((tab) => Number.isInteger(tab.id))
-			.map((tab) => chrome.tabs.reload(tab.id)),
-	);
-}
-
 function normalizeBundleTitle(group, index) {
 	return String(group?.title ?? "").trim() || `Untitled bundle ${index + 1}`;
 }
@@ -331,7 +321,6 @@ async function toggleIgnoreAction() {
 			}
 			return nextValues;
 		});
-		await refreshOpenSettingsTabs();
 		await requestForceReevaluate();
 
 		await renderActiveTabStatus();

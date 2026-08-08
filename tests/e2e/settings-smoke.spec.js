@@ -65,3 +65,51 @@ test("uses one initial-URL toggle and keeps both legacy storage keys aligned", a
     return [stored.ignoreInitialTabUrlForGrouping, stored.ignoreInitialTabUrlForEnforcement];
   }).toEqual([true, true]);
 });
+
+test("preserves an unsaved bundle draft while a clean ignore list updates live", async ({ extensionPage, extensionApi }) => {
+  const settingsPage = await extensionPage("settings.html");
+  await settingsPage.getByText("Custom bundles", { exact: true }).click();
+  await settingsPage.getByRole("button", { name: "Create bundle" }).click();
+  await settingsPage.getByLabel("Bundle title").fill("Unsaved research");
+  await settingsPage.getByLabel("Domain rules").fill("example.com\nexample.org");
+
+  await extensionApi.setStorage({ ignoredHostnames: ["popup.example"] });
+
+  await settingsPage.getByText("Site separation rules").click();
+  await expect(settingsPage.getByLabel("Ignore these specific hostnames")).toHaveValue("popup.example");
+  await expect(settingsPage.getByLabel("Bundle title")).toHaveValue("Unsaved research");
+  await expect(settingsPage.getByLabel("Domain rules")).toHaveValue("example.com\nexample.org");
+
+  await settingsPage.getByRole("button", { name: "Save changes" }).click();
+  await expect.poll(async () => await extensionApi.getStorage()).toMatchObject({
+    ignoredHostnames: ["popup.example"],
+    customDomainGroups: [{ title: "Unsaved research", domains: ["example.com", "example.org"] }],
+  });
+});
+
+test("requires an explicit choice for simultaneous local and external ignore-list edits", async ({ extensionPage, extensionApi }) => {
+  await extensionApi.setStorage({ ignoredHostnames: ["original.example"] });
+  const settingsPage = await extensionPage("settings.html");
+  await settingsPage.getByText("Site separation rules").click();
+  const ignored = settingsPage.getByLabel("Ignore these specific hostnames");
+  const save = settingsPage.getByRole("button", { name: "Save changes" });
+
+  await ignored.fill("my-draft.example");
+  await extensionApi.setStorage({ ignoredHostnames: ["popup.example"] });
+  await expect(settingsPage.getByRole("alert")).toContainText("stored ignore list changed");
+  await expect(ignored).toHaveValue("my-draft.example");
+  await expect(save).toBeDisabled();
+
+  await settingsPage.getByRole("button", { name: "Use current stored value" }).click();
+  await expect(ignored).toHaveValue("popup.example");
+  await expect(settingsPage.getByRole("alert")).toBeHidden();
+
+  await ignored.fill("second-draft.example");
+  await extensionApi.setStorage({ ignoredHostnames: ["newer-popup.example"] });
+  await expect(save).toBeDisabled();
+  await settingsPage.getByRole("button", { name: "Keep my draft" }).click();
+  await expect(ignored).toHaveValue("second-draft.example");
+  await expect(save).toBeEnabled();
+  await save.click();
+  await expect.poll(async () => (await extensionApi.getStorage()).ignoredHostnames).toEqual(["second-draft.example"]);
+});

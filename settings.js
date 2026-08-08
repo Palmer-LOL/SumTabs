@@ -21,6 +21,56 @@ let savedSnapshot = "";
 let jsonDraftDirty = false;
 let pendingDeletion = null;
 let loading = true;
+let savingIgnoredHostnamesValue = null;
+let ignoredHostnamesBaseline = "";
+let ignoredHostnamesConflict = null;
+
+function storedIgnoredHostnamesText(settings) {
+    return arrayToLines(settings.ignoredHostnames ?? DEFAULTS.ignoredHostnames);
+}
+
+function updateIgnoredHostnamesSnapshot(value) {
+    if (!savedSnapshot) return;
+    const snapshot = JSON.parse(savedSnapshot);
+    snapshot.ignoredHostnames = value;
+    savedSnapshot = JSON.stringify(snapshot);
+}
+
+function clearIgnoredHostnamesConflict() {
+    ignoredHostnamesConflict = null;
+    $("ignoredHostnamesConflict").hidden = true;
+}
+
+function acceptIgnoredHostnamesBaseline(value, { updateEditor = false } = {}) {
+    ignoredHostnamesBaseline = value;
+    updateIgnoredHostnamesSnapshot(value);
+    if (updateEditor) $("ignoredHostnames").value = value;
+    clearIgnoredHostnamesConflict();
+}
+
+function showIgnoredHostnamesConflict(storedValue) {
+    ignoredHostnamesConflict = { storedValue };
+    $("ignoredHostnamesConflict").hidden = false;
+    updateSaveState({
+        message: "Resolve the ignored-hostname conflict before saving.",
+        state: "error",
+    });
+}
+
+function handleExternalIgnoredHostnames(value) {
+    const incomingValue = arrayToLines(value ?? DEFAULTS.ignoredHostnames);
+    const localValue = $("ignoredHostnames").value;
+
+    if (localValue === ignoredHostnamesBaseline) {
+        acceptIgnoredHostnamesBaseline(incomingValue, { updateEditor: true });
+    } else if (incomingValue === localValue) {
+        acceptIgnoredHostnamesBaseline(incomingValue);
+    } else if (incomingValue !== ignoredHostnamesBaseline) {
+        showIgnoredHostnamesConflict(incomingValue);
+        return;
+    }
+    updateSaveState();
+}
 function setValidationMessage(element, message = "", state = "") {
     if (!element) return;
     element.textContent = message;
@@ -169,7 +219,7 @@ function updateSaveState(customMessage = null) {
 
     const errors = validateSettings();
     const dirty = hasUnsavedChanges();
-    const saveBlocked = errors.length > 0 || jsonDraftDirty;
+    const saveBlocked = errors.length > 0 || jsonDraftDirty || !!ignoredHostnamesConflict;
     $("save").disabled = !dirty || saveBlocked;
 
     if (customMessage) {
@@ -178,6 +228,8 @@ function updateSaveState(customMessage = null) {
         setStatus(`${errors.length} ${errors.length === 1 ? "issue needs" : "issues need"} attention before saving.`, "error");
     } else if (jsonDraftDirty) {
         setStatus("Raw JSON has unapplied changes.", "warning");
+    } else if (ignoredHostnamesConflict) {
+        setStatus("Resolve the ignored-hostname conflict before saving.", "error");
     } else if (dirty) {
         setStatus("Unsaved changes.", "warning");
     } else {
@@ -371,6 +423,8 @@ async function load() {
     const stored = await chrome.storage.sync.get(DEFAULTS);
     populateForm(stored);
     savedSnapshot = captureUiSnapshot();
+    ignoredHostnamesBaseline = storedIgnoredHostnamesText(stored);
+    clearIgnoredHostnamesConflict();
     loading = false;
     updateSaveState();
 }
@@ -378,7 +432,7 @@ async function load() {
 async function save() {
     updateSelectedGroupFromInputs();
     const errors = validateSettings();
-    if (errors.length || jsonDraftDirty) {
+    if (errors.length || jsonDraftDirty || ignoredHostnamesConflict) {
         updateSaveState();
         return;
     }
@@ -386,7 +440,7 @@ async function save() {
     const commonMultipartSuffixes = parseHostnameRulesTextarea($("commonMultipartSuffixes").value);
     const excludedFromRootCollapse = parseHostnameRulesTextarea($("excludedFromRootCollapse").value);
     const ignoredHostnames = parseHostnameRulesTextarea($("ignoredHostnames").value);
-    const payload = {
+    const editorValues = {
         minTabsToGroup: Number($("minTabsToGroup").value),
         collapseOtherGroupsOnNavEvents: $("collapseOtherGroupsOnNavEvents").checked,
         keepManagedGroupsAtFront: $("keepManagedGroupsAtFront").checked,
@@ -400,17 +454,58 @@ async function save() {
         customDomainGroups: buildGroupsForPersistence(customGroupsState),
     };
 
+    // Read immediately before writing so an external quick action cannot be
+    // overwritten by stale values from this page.
+    const latest = await chrome.storage.sync.get(DEFAULTS);
+    const latestIgnoredHostnames = storedIgnoredHostnamesText(latest);
+    const localIgnoredHostnames = arrayToLines(ignoredHostnames.validHostnames);
+    if (latestIgnoredHostnames !== ignoredHostnamesBaseline) {
+        if ($("ignoredHostnames").value === ignoredHostnamesBaseline) {
+            acceptIgnoredHostnamesBaseline(latestIgnoredHostnames, { updateEditor: true });
+        } else if (latestIgnoredHostnames === localIgnoredHostnames) {
+            acceptIgnoredHostnamesBaseline(latestIgnoredHostnames);
+        } else {
+            showIgnoredHostnamesConflict(latestIgnoredHostnames);
+            return;
+        }
+    }
+
+    const baseline = JSON.parse(savedSnapshot);
+    const current = JSON.parse(captureUiSnapshot());
+    const payload = {};
+    const copyIfChanged = (uiKey, ...storageKeys) => {
+        if (JSON.stringify(current[uiKey]) === JSON.stringify(baseline[uiKey])) return;
+        for (const storageKey of storageKeys) payload[storageKey] = editorValues[storageKey];
+    };
+    copyIfChanged("minTabsToGroup", "minTabsToGroup");
+    copyIfChanged("collapseOtherGroupsOnNavEvents", "collapseOtherGroupsOnNavEvents");
+    copyIfChanged("keepManagedGroupsAtFront", "keepManagedGroupsAtFront");
+    copyIfChanged("ungroupSingletonManagedGroups", "ungroupSingletonManagedGroups");
+    copyIfChanged("ignoreInitialTabUrl", "ignoreInitialTabUrlForGrouping", "ignoreInitialTabUrlForEnforcement");
+    copyIfChanged("commonMultipartSuffixes", "commonMultipartSuffixes");
+    copyIfChanged("excludedFromRootCollapse", "excludedFromRootCollapse");
+    copyIfChanged("ignoredHostnames", "ignoredHostnames");
+    copyIfChanged("customDomainGroups", "customDomainGroups");
+
     $("save").disabled = true;
     setStatus("Saving…", "neutral");
 
     try {
+        savingIgnoredHostnamesValue = Object.hasOwn(payload, "ignoredHostnames")
+            ? arrayToLines(payload.ignoredHostnames)
+            : null;
         await chrome.storage.sync.set(payload);
-        populateForm(payload);
+        const savedSettings = { ...latest, ...payload };
+        populateForm(savedSettings);
         savedSnapshot = captureUiSnapshot();
+        ignoredHostnamesBaseline = storedIgnoredHostnamesText(savedSettings);
+        clearIgnoredHostnamesConflict();
         updateSaveState({ message: "Changes saved.", state: "valid" });
     } catch (error) {
         console.error("Failed to save SumTabs settings", error);
         updateSaveState({ message: "Could not save changes. Try again.", state: "error" });
+    } finally {
+        savingIgnoredHostnamesValue = null;
     }
 }
 
@@ -473,12 +568,30 @@ function bindEvents() {
     });
     $("reset").addEventListener("click", loadDefaultsIntoEditor);
 
+    $("useStoredIgnoredHostnames").addEventListener("click", () => {
+        if (!ignoredHostnamesConflict) return;
+        acceptIgnoredHostnamesBaseline(ignoredHostnamesConflict.storedValue, { updateEditor: true });
+        updateSaveState();
+    });
+    $("keepDraftIgnoredHostnames").addEventListener("click", () => {
+        if (!ignoredHostnamesConflict) return;
+        acceptIgnoredHostnamesBaseline(ignoredHostnamesConflict.storedValue);
+        updateSaveState();
+    });
+
     window.addEventListener("beforeunload", (event) => {
         if (!hasUnsavedChanges() && !jsonDraftDirty) return;
         event.preventDefault();
         event.returnValue = "";
     });
 }
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== "sync" || !changes.ignoredHostnames || loading) return;
+    const incomingValue = arrayToLines(changes.ignoredHostnames.newValue ?? DEFAULTS.ignoredHostnames);
+    if (savingIgnoredHostnamesValue !== null && incomingValue === savingIgnoredHostnamesValue) return;
+    handleExternalIgnoredHostnames(changes.ignoredHostnames.newValue);
+});
 
 bindEvents();
 load().catch((error) => {

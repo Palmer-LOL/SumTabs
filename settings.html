@@ -259,6 +259,13 @@
 								matching tabs unmanaged.
 							</div>
 							<div class="validation-message" id="ignoredHostnamesValidation" role="status"></div>
+							<div id="ignoredHostnamesConflict" class="settings__conflict-notice" role="alert" hidden>
+								<p>The stored ignore list changed while you were editing. Choose which value to use before saving.</p>
+								<div class="settings__button-row">
+									<button class="button" id="useStoredIgnoredHostnames" type="button">Use current stored value</button>
+									<button class="button" id="keepDraftIgnoredHostnames" type="button">Keep my draft</button>
+								</div>
+							</div>
 						</div>
 
 						<div class="settings__row">
