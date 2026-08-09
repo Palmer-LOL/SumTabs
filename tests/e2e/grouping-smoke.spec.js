@@ -119,18 +119,16 @@ test("reevaluation removes ignored unpinned tabs from managed groups but preserv
   await extensionApi.forceReevaluate();
   await expectTabsGrouped(extensionApi, managedUrls);
 
-  await extensionApi.setStorage({ ignoredHostnames: ["127.0.0.1"] });
-  await extensionApi.forceReevaluate();
+  const response = await extensionApi.updateIgnoredHostname("127.0.0.1", true);
+  expect(response).toEqual({ ok: true });
 
-  await expect.poll(async () => {
-    const managedTabs = await extensionApi.tabsByUrls(managedUrls);
-    const userTabs = await extensionApi.tabsByUrls(userUrls);
-    return {
-      managedGroupIds: managedTabs.map((tab) => tab?.groupId),
-      userGroupIds: userTabs.map((tab) => tab?.groupId),
-      userTitle: (await extensionApi.groupById(userGroup.groupId)).title,
-    };
-  }).toEqual({
+  const managedTabs = await extensionApi.tabsByUrls(managedUrls);
+  const userTabs = await extensionApi.tabsByUrls(userUrls);
+  expect({
+    managedGroupIds: managedTabs.map((tab) => tab?.groupId),
+    userGroupIds: userTabs.map((tab) => tab?.groupId),
+    userTitle: (await extensionApi.groupById(userGroup.groupId)).title,
+  }, "the update acknowledgement should wait for strict membership enforcement").toEqual({
     managedGroupIds: [noGroupId, noGroupId],
     userGroupIds: [userGroup.groupId, userGroup.groupId],
     userTitle: "Manual ignored hosts",

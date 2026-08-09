@@ -34,7 +34,6 @@ const forceReevaluateButton = document.getElementById("forceReevaluate");
 
 let quickActionContext = null;
 let quickActionInFlight = false;
-const IGNORED_HOSTNAMES_STORAGE_LOCK = "sumtabs:ignored-hostnames-storage";
 
 function announcePopupFeedback(message) {
 	if (!popupFeedbackEl) return;
@@ -58,6 +57,16 @@ async function requestForceReevaluate() {
 	});
 	if (response?.ok) return response;
 	throw new Error(response?.error || "Could not reapply rules.");
+}
+
+async function requestIgnoredHostnameUpdate(hostname, shouldIgnore) {
+	const response = await chrome.runtime.sendMessage({
+		type: "sumtabs:update-ignored-hostname",
+		hostname,
+		shouldIgnore,
+	});
+	if (response?.ok) return response;
+	throw new Error(response?.error || "Could not update ignored hostname.");
 }
 
 function normalizeBundleTitle(group, index) {
@@ -313,19 +322,10 @@ async function toggleIgnoreAction() {
 	renderQuickActions(quickActionContext);
 
 	try {
-		await navigator.locks.request(IGNORED_HOSTNAMES_STORAGE_LOCK, async () => {
-			await updateSyncList("ignoredHostnames", (currentValues) => {
-				const nextValues = normalizeLowerList(currentValues);
-				if (quickActionContext.ignoreActionEnabled) {
-					nextValues.delete(quickActionContext.hostname);
-				} else {
-					nextValues.add(quickActionContext.hostname);
-				}
-				return nextValues;
-			});
-		});
-		// The background storage-change listener owns this reevaluation. Sending a
-		// second request here would let two full-window passes mutate groups at once.
+		await requestIgnoredHostnameUpdate(
+			quickActionContext.hostname,
+			!quickActionContext.ignoreActionEnabled,
+		);
 
 		await renderActiveTabStatus();
 		announcePopupFeedback(

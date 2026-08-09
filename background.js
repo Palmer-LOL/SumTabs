@@ -72,13 +72,48 @@ chrome.runtime.onInstalled?.addListener(async () => {
 });
 
 // Live-update if user changes options
+let reevaluationQueue = Promise.resolve();
+let ignoredHostnameUpdateQueue = Promise.resolve();
+const ignoredHostnameChangeWaiters = [];
+
+function enqueueForceReevaluation() {
+    const reevaluation = reevaluationQueue
+        .catch(() => {})
+        .then(() => forceReevaluateAllWindows());
+    reevaluationQueue = reevaluation;
+    return reevaluation;
+}
+
+function ignoredHostnamesSignature(values) {
+    return JSON.stringify(
+        [...new Set((values ?? [])
+            .map(value => String(value).trim().toLowerCase())
+            .filter(Boolean))]
+            .sort(),
+    );
+}
+
 chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "sync") return;
     for (const [k, v] of Object.entries(changes)) settings[k] = v.newValue;
     rebuildDerived();
 
     if (changes.keepManagedGroupsAtFront?.newValue || changes.ignoredHostnames) {
-        forceReevaluateAllWindows().catch(() => {});
+        const reevaluation = enqueueForceReevaluation();
+
+        if (changes.ignoredHostnames) {
+            const signature = ignoredHostnamesSignature(changes.ignoredHostnames.newValue);
+            const matchingWaiters = ignoredHostnameChangeWaiters
+                .filter(waiter => waiter.signature === signature);
+            for (const waiter of matchingWaiters) {
+                ignoredHostnameChangeWaiters.splice(ignoredHostnameChangeWaiters.indexOf(waiter), 1);
+                reevaluation.then(waiter.resolve, waiter.reject);
+            }
+        }
+
+        // Storage changes without a popup awaiting completion still need error
+        // isolation so the service worker does not produce an unhandled rejection.
+        reevaluation.catch(() => {});
     }
 });
 
@@ -664,6 +699,54 @@ async function forceReevaluateAllWindows() {
     }
 }
 
+async function updateIgnoredHostname(hostname, shouldIgnore) {
+    const normalizedHostname = String(hostname ?? "").trim().toLowerCase();
+    if (!normalizedHostname) throw new Error("A hostname is required.");
+
+    const stored = await chrome.storage.sync.get(DEFAULTS);
+    const ignoredHostnames = new Set(
+        (stored.ignoredHostnames ?? [])
+            .map(value => String(value).trim().toLowerCase())
+            .filter(Boolean),
+    );
+    if (shouldIgnore) ignoredHostnames.add(normalizedHostname);
+    else ignoredHostnames.delete(normalizedHostname);
+
+    const nextIgnoredHostnames = [...ignoredHostnames];
+    const currentSignature = ignoredHostnamesSignature(stored.ignoredHostnames);
+    const nextSignature = ignoredHostnamesSignature(nextIgnoredHostnames);
+    if (currentSignature === nextSignature) {
+        await enqueueForceReevaluation();
+        return;
+    }
+
+    let resolveChange;
+    let rejectChange;
+    const changeCompleted = new Promise((resolve, reject) => {
+        resolveChange = resolve;
+        rejectChange = reject;
+    });
+    const waiter = { signature: nextSignature, resolve: resolveChange, reject: rejectChange };
+    ignoredHostnameChangeWaiters.push(waiter);
+
+    try {
+        await chrome.storage.sync.set({ ignoredHostnames: nextIgnoredHostnames });
+        await changeCompleted;
+    } catch (error) {
+        const waiterIndex = ignoredHostnameChangeWaiters.indexOf(waiter);
+        if (waiterIndex !== -1) ignoredHostnameChangeWaiters.splice(waiterIndex, 1);
+        throw error;
+    }
+}
+
+function enqueueIgnoredHostnameUpdate(hostname, shouldIgnore) {
+    const update = ignoredHostnameUpdateQueue
+        .catch(() => {})
+        .then(() => updateIgnoredHostname(hostname, shouldIgnore));
+    ignoredHostnameUpdateQueue = update;
+    return update;
+}
+
 // -------------------- EVENT HANDLERS --------------------
 
 chrome.tabs.onCreated.addListener(async (tab) => {
@@ -795,14 +878,20 @@ chrome.tabGroups.onUpdated?.addListener((group) => {
 });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message?.type !== "sumtabs:force-reevaluate") return undefined;
+    const isForceReevaluation = message?.type === "sumtabs:force-reevaluate";
+    const isIgnoredHostnameUpdate = message?.type === "sumtabs:update-ignored-hostname";
+    if (!isForceReevaluation && !isIgnoredHostnameUpdate) return undefined;
 
     (async () => {
         try {
-            await forceReevaluateAllWindows();
+            if (isIgnoredHostnameUpdate) {
+                await enqueueIgnoredHostnameUpdate(message.hostname, message.shouldIgnore === true);
+            } else {
+                await enqueueForceReevaluation();
+            }
             sendResponse({ ok: true });
         } catch (error) {
-            console.error("Failed to force tab reevaluation", error);
+            console.error("Failed to process tab reevaluation request", error);
             sendResponse({ ok: false, error: String(error) });
         }
     })();
