@@ -324,7 +324,8 @@ async function toggleIgnoreAction() {
 				return nextValues;
 			});
 		});
-		await requestForceReevaluate();
+		// The background storage-change listener owns this reevaluation. Sending a
+		// second request here would let two full-window passes mutate groups at once.
 
 		await renderActiveTabStatus();
 		announcePopupFeedback(
