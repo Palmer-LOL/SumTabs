@@ -131,6 +131,8 @@ export function parseHostnameRulesTextarea(text) {
 }
 
 export function validateImportedSettings(settings, requiredManagedGroupPrefix) {
+    const validatedSettings = structuredClone(settings);
+
     if (settings.autoGroupPrefix !== requiredManagedGroupPrefix) {
         throw new Error("The backup does not contain the required SumTabs managed-group prefix.");
     }
@@ -157,6 +159,7 @@ export function validateImportedSettings(settings, requiredManagedGroupPrefix) {
         if (parsed.invalidEntries.length) {
             throw new Error(`The backup setting “${key}” contains an invalid hostname.`);
         }
+        validatedSettings[key] = parsed.validHostnames;
     }
 
     if (Object.hasOwn(settings, "customDomainGroups")) {
@@ -176,7 +179,7 @@ export function validateImportedSettings(settings, requiredManagedGroupPrefix) {
 
     // Return a copy of the entire payload so settings from newer versions are
     // retained, while every setting understood by this version is validated.
-    return structuredClone(settings);
+    return validatedSettings;
 }
 
 export function normalizeStoredGroups(groups) {

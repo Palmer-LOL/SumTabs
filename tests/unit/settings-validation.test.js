@@ -145,6 +145,23 @@ describe("settings backup validation", () => {
             .toThrow("contains a domain rule used by more than one bundle");
     });
 
+    it("canonicalizes imported hostname arrays before they are stored", () => {
+        const settings = {
+            autoGroupPrefix: DEFAULTS.autoGroupPrefix,
+            commonMultipartSuffixes: [" CO.UK ", "co.uk", "com.au\nORG.UK", "  "],
+            excludedFromRootCollapse: [" WWW.Example.COM "],
+            ignoredHostnames: ["Docs.Example.com", " docs.example.com "],
+        };
+
+        expect(validateImportedSettings(settings, DEFAULTS.autoGroupPrefix)).toEqual({
+            autoGroupPrefix: DEFAULTS.autoGroupPrefix,
+            commonMultipartSuffixes: ["co.uk", "com.au", "org.uk"],
+            excludedFromRootCollapse: ["www.example.com"],
+            ignoredHostnames: ["docs.example.com"],
+        });
+        expect(settings.commonMultipartSuffixes).toEqual([" CO.UK ", "co.uk", "com.au\nORG.UK", "  "]);
+    });
+
     it.each([
         ["autoGroupPrefix", "other", "required SumTabs managed-group prefix"],
         ["minTabsToGroup", "2", "must be a whole number"],
