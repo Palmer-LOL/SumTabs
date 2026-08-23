@@ -251,7 +251,7 @@ test("coordinates the final conflict check and write with popup ignore updates",
   await popupWriter.close();
 });
 
-test("serializes a real popup ignore toggle behind a Settings save", async ({ context, httpServer, extensionPage, extensionApi }) => {
+test("keeps a real popup ignore toggle queued after the popup closes", async ({ context, httpServer, extensionPage, extensionApi }) => {
   const storageLock = "sumtabs:ignored-hostnames-storage";
   const targetUrl = httpServer.url("/popup-settings-lock-race");
   const targetHostname = new URL(targetUrl).hostname;
@@ -296,14 +296,11 @@ test("serializes a real popup ignore toggle behind a Settings save", async ({ co
     }, storageLock)).toBeGreaterThanOrEqual(1);
 
     await popupIgnoreToggle.check();
-    await expect.poll(async () => {
-      const stored = await extensionApi.getStorage();
-      const lockState = await settingsPage.evaluate(async (lockName) => {
-        const snapshot = await navigator.locks.query();
-        return snapshot.pending.filter((lock) => lock.name === lockName).length;
-      }, storageLock);
-      return stored.ignoredHostnames?.includes(targetHostname) || lockState >= 2;
-    }).toBe(true);
+    await expect.poll(() => settingsPage.evaluate(async (lockName) => {
+      const snapshot = await navigator.locks.query();
+      return snapshot.pending.filter((lock) => lock.name === lockName).length;
+    }, storageLock)).toBe(2);
+    await popupPage.close();
   } finally {
     await settingsPage.evaluate(() => globalThis.releaseIgnoredHostnamesTestLock?.());
   }
@@ -312,5 +309,4 @@ test("serializes a real popup ignore toggle behind a Settings save", async ({ co
     "settings-draft.example",
     targetHostname,
   ]);
-  await expect(popupPage.locator("#popupFeedback")).toContainText("Hostname ignored. Open tabs have been reorganized.");
 });

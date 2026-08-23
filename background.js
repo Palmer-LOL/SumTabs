@@ -75,6 +75,7 @@ chrome.runtime.onInstalled?.addListener(async () => {
 let reevaluationQueue = Promise.resolve();
 let ignoredHostnameUpdateQueue = Promise.resolve();
 const ignoredHostnameChangeWaiters = [];
+const IGNORED_HOSTNAMES_STORAGE_LOCK = "sumtabs:ignored-hostnames-storage";
 
 function enqueueForceReevaluation() {
     const reevaluation = reevaluationQueue
@@ -892,7 +893,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     (async () => {
         try {
             if (isIgnoredHostnameUpdate) {
-                await enqueueIgnoredHostnameUpdate(message.hostname, message.shouldIgnore === true);
+                await navigator.locks.request(IGNORED_HOSTNAMES_STORAGE_LOCK, () => (
+                    enqueueIgnoredHostnameUpdate(message.hostname, message.shouldIgnore === true)
+                ));
             } else {
                 await enqueueForceReevaluation();
             }
