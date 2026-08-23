@@ -499,7 +499,14 @@ async function maybeGroupTab(tab, currentGrouping, originalActiveTabId = null) {
     if (IGNORE_INITIAL_TAB_URL) {
         const initialUrl = initialUrlByTab.get(tab.id);
         const currentUrl = tab.url || tab.pendingUrl;
-        if (initialUrl && currentUrl && currentUrl === initialUrl) return;
+        if (initialUrl && currentUrl && currentUrl === initialUrl) {
+            // The initial-URL exemption must not preserve ignored hostnames in
+            // managed groups, including tabs created directly inside a group.
+            if (!currentGrouping?.identity) {
+                await enforceGroupMembershipForTab(tab, currentGrouping);
+            }
+            return;
+        }
     }
 
     const groupIdentity = currentGrouping?.identity;

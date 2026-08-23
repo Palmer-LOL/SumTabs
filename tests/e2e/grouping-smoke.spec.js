@@ -177,3 +177,26 @@ test("returning to an ignored initial URL removes a tab from its managed group",
     message: "an ignored initial URL should not remain in a managed group",
   }).toBe(noGroupId);
 });
+
+test("creating an ignored initial URL inside a managed group removes it immediately", async ({ context, httpServer, extensionApi }) => {
+  const managedUrls = [httpServer.url("/managed-opener-a"), httpServer.url("/managed-opener-b")];
+  const ignoredUrl = httpServer.url("/ignored-group-child").replace("127.0.0.1", "localhost");
+  await extensionApi.setStorage({
+    ignoreInitialTabUrlForGrouping: true,
+    ignoredHostnames: ["localhost"],
+  });
+
+  const openerPage = await openHttpPage(context, managedUrls[0]);
+  await openHttpPage(context, managedUrls[1]);
+  await extensionApi.forceReevaluate();
+  await expectTabsGrouped(extensionApi, managedUrls);
+
+  const childPagePromise = context.waitForEvent("page");
+  await openerPage.evaluate((url) => window.open(url, "_blank"), ignoredUrl);
+  const childPage = await childPagePromise;
+  await childPage.waitForLoadState();
+
+  await expect.poll(async () => (await extensionApi.tabByUrl(ignoredUrl))?.groupId ?? noGroupId, {
+    message: "an ignored tab created inside a managed group should be removed despite its initial-URL exemption",
+  }).toBe(noGroupId);
+});
