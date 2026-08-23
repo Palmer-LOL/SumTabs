@@ -250,3 +250,67 @@ test("coordinates the final conflict check and write with popup ignore updates",
   await expect.poll(async () => (await extensionApi.getStorage()).ignoredHostnames).toEqual(["popup.example"]);
   await popupWriter.close();
 });
+
+test("serializes a real popup ignore toggle behind a Settings save", async ({ context, httpServer, extensionPage, extensionApi }) => {
+  const storageLock = "sumtabs:ignored-hostnames-storage";
+  const targetUrl = httpServer.url("/popup-settings-lock-race");
+  const targetHostname = new URL(targetUrl).hostname;
+  await extensionApi.setStorage({ ignoredHostnames: ["original.example"] });
+  const targetPage = await context.newPage();
+  await targetPage.goto(targetUrl);
+
+  const settingsPage = await extensionPage("settings.html");
+  await settingsPage.getByText("Site separation rules").click();
+  await settingsPage.getByLabel("Ignore these specific hostnames").fill("settings-draft.example");
+
+  const popupPage = await extensionPage("popup.html");
+  await extensionApi.evaluate(`
+    const targetUrl = ${JSON.stringify(targetUrl)};
+    const tabs = await callbackify(chrome.tabs.query.bind(chrome.tabs), {});
+    const targetTab = tabs.find((tab) => tab.url === targetUrl);
+    if (!targetTab) throw new Error("Target tab not found");
+    await callbackify(chrome.tabs.update.bind(chrome.tabs), targetTab.id, { active: true });
+    return true;
+  `);
+  await popupPage.reload();
+  await expect(popupPage.locator("#activeHostname")).toHaveText(targetHostname);
+  await popupPage.getByText("Change how this site is handled").click();
+  const popupIgnoreToggle = popupPage.getByRole("checkbox", { name: `Ignore ${targetHostname}` });
+  await expect(popupIgnoreToggle).toBeVisible();
+
+  await settingsPage.evaluate((lockName) => {
+    globalThis.releaseIgnoredHostnamesTestLock = null;
+    globalThis.ignoredHostnamesTestLockHeld = false;
+    globalThis.ignoredHostnamesTestLock = navigator.locks.request(lockName, async () => {
+      globalThis.ignoredHostnamesTestLockHeld = true;
+      await new Promise((resolve) => { globalThis.releaseIgnoredHostnamesTestLock = resolve; });
+    });
+  }, storageLock);
+  await expect.poll(() => settingsPage.evaluate(() => globalThis.ignoredHostnamesTestLockHeld)).toBe(true);
+
+  try {
+    await settingsPage.getByRole("button", { name: "Save changes" }).click();
+    await expect.poll(() => settingsPage.evaluate(async (lockName) => {
+      const snapshot = await navigator.locks.query();
+      return snapshot.pending.filter((lock) => lock.name === lockName).length;
+    }, storageLock)).toBeGreaterThanOrEqual(1);
+
+    await popupIgnoreToggle.check();
+    await expect.poll(async () => {
+      const stored = await extensionApi.getStorage();
+      const lockState = await settingsPage.evaluate(async (lockName) => {
+        const snapshot = await navigator.locks.query();
+        return snapshot.pending.filter((lock) => lock.name === lockName).length;
+      }, storageLock);
+      return stored.ignoredHostnames?.includes(targetHostname) || lockState >= 2;
+    }).toBe(true);
+  } finally {
+    await settingsPage.evaluate(() => globalThis.releaseIgnoredHostnamesTestLock?.());
+  }
+
+  await expect.poll(async () => (await extensionApi.getStorage()).ignoredHostnames).toEqual([
+    "settings-draft.example",
+    targetHostname,
+  ]);
+  await expect(popupPage.locator("#popupFeedback")).toContainText("Hostname ignored. Open tabs have been reorganized.");
+});
