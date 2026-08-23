@@ -1,4 +1,5 @@
 import { test, expect } from "./fixtures.js";
+import { readFile } from "node:fs/promises";
 
 test.beforeEach(async ({ extensionApi }) => {
   await extensionApi.resetStorage();
@@ -37,6 +38,76 @@ test("discards editor changes without replacing saved settings", async ({ extens
   await expect(threshold).toHaveValue("3");
   await expect(settingsPage.getByRole("button", { name: "Save changes" })).toBeDisabled();
   await expect.poll(async () => (await extensionApi.getStorage()).minTabsToGroup).toBe(3);
+});
+
+test("exports synchronized settings and imports a backup", async ({ extensionPage, extensionApi }) => {
+  await extensionApi.setStorage({ minTabsToGroup: 3, futureSetting: { retained: true } });
+  const settingsPage = await extensionPage("settings.html");
+  await settingsPage.getByText("Advanced behavior").click();
+
+  const downloadPromise = settingsPage.waitForEvent("download");
+  await settingsPage.getByRole("button", { name: "Export settings" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/^sumtabs-settings-\d{4}-\d{2}-\d{2}\.json$/);
+  const exported = JSON.parse(await readFile(await download.path(), "utf8"));
+  expect(exported).toMatchObject({
+    format: "sumtabs-settings",
+    version: 1,
+    settings: {
+      autoGroupPrefix: "∑ ",
+      minTabsToGroup: 3,
+      futureSetting: { retained: true },
+    },
+  });
+
+  const imported = structuredClone(exported);
+  imported.settings.minTabsToGroup = 4;
+  imported.settings.customDomainGroups = [{ title: "Restored", domains: ["example.com", "example.org"] }];
+  settingsPage.once("dialog", (dialog) => dialog.accept());
+  await settingsPage.locator("#importSettingsFile").setInputFiles({
+    name: "sumtabs-settings.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(imported)),
+  });
+
+  await expect(settingsPage.getByRole("status").filter({ hasText: "Settings imported." })).toBeVisible();
+  await expect(settingsPage.getByLabel("Group when at least this many matching tabs exist")).toHaveValue("4");
+  await expect.poll(async () => await extensionApi.getStorage()).toMatchObject({
+    minTabsToGroup: 4,
+    futureSetting: { retained: true },
+    customDomainGroups: [{ title: "Restored", domains: ["example.com", "example.org"] }],
+  });
+});
+
+test("rejects malformed imported settings before writing to sync storage", async ({ extensionPage, extensionApi }) => {
+  await extensionApi.setStorage({ minTabsToGroup: 3, futureSetting: { retained: true } });
+  const settingsPage = await extensionPage("settings.html");
+  const malformed = {
+    format: "sumtabs-settings",
+    version: 1,
+    settings: {
+      ...structuredClone((await extensionApi.getStorage())),
+      autoGroupPrefix: "∑ ",
+      collapseOtherGroupsOnNavEvents: true,
+      keepManagedGroupsAtFront: true,
+      ungroupSingletonManagedGroups: false,
+      ignoreInitialTabUrlForGrouping: true,
+      ignoreInitialTabUrlForEnforcement: true,
+      commonMultipartSuffixes: "co.uk",
+      excludedFromRootCollapse: [],
+      ignoredHostnames: [],
+      customDomainGroups: [],
+    },
+  };
+
+  await settingsPage.locator("#importSettingsFile").setInputFiles({
+    name: "malformed-sumtabs-settings.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(malformed)),
+  });
+
+  await expect(settingsPage.getByRole("status").filter({ hasText: "must be an array of hostnames" })).toBeVisible();
+  expect(await extensionApi.getStorage()).toEqual({ minTabsToGroup: 3, futureSetting: { retained: true } });
 });
 
 test("saves and reloads canonical ignored hostnames through sync storage", async ({ extensionPage, extensionApi }) => {
