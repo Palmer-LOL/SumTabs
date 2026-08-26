@@ -77,7 +77,7 @@ test("preserves a user-created non-managed group during reevaluation", async ({ 
 test("ignored tabs neither form nor join managed groups", async ({ context, httpServer, extensionApi }) => {
   const firstUrl = httpServer.url("/ignored-a");
   const secondUrl = httpServer.url("/ignored-b");
-  await extensionApi.setStorage({ ignoredHostnames: ["127.0.0.1"] });
+  await extensionApi.updateIgnoredHostname("127.0.0.1", true);
   await openHttpPage(context, firstUrl);
   await openHttpPage(context, secondUrl);
   const createdTabs = await extensionApi.forceReevaluateTrackingCreatedTabs();

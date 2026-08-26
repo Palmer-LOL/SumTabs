@@ -763,9 +763,6 @@ chrome.tabs.onCreated.addListener(async (tab) => {
         if (!tab || tab.id == null) return;
         if (tab.pinned) return;
 
-        if (underMutationLock()) return;
-        if (!shouldProcessTab(tab.id)) return;
-
         // Use pendingUrl first; some tabs start there before tab.url is set.
         const url = tab.pendingUrl || tab.url;
         const u = safeParseUrl(url);
@@ -775,6 +772,14 @@ chrome.tabs.onCreated.addListener(async (tab) => {
         if (u?.href) initialUrlByTab.set(tab.id, u.href);
 
         const grouping = resolveTabGrouping(tab);
+        if (!grouping?.identity) {
+            await enforceGroupMembershipForTab(tab, grouping);
+            return;
+        }
+
+        if (underMutationLock()) return;
+        if (!shouldProcessTab(tab.id)) return;
+
         await maybeGroupTab(tab, grouping);
 
         if (COLLAPSE_OTHER_GROUPS_ON_NAV_EVENTS) {
@@ -791,9 +796,6 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
         if (!tab || tab.id == null) return;
         if (tab.pinned) return;
 
-        if (underMutationLock()) return;
-        if (!shouldProcessTab(tabId)) return;
-
         // Only react on meaningful lifecycle updates, but detect URL changes ourselves.
         // Brave sometimes does NOT populate changeInfo.url.
         const isMeaningful =
@@ -809,17 +811,19 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
         const u = safeParseUrl(currentUrl);
         if (!isWebUrl(u)) return;
 
+        const grouping = resolveTabGrouping(tab, changeInfo);
+        if (!grouping?.identity) {
+            await enforceGroupMembershipForTab(tab, grouping);
+            return;
+        }
+
+        if (underMutationLock()) return;
+        if (!shouldProcessTab(tabId)) return;
+
         const initialUrl = initialUrlByTab.get(tabId);
 
         // If enabled, ignore grouping while the tab is still on its initial URL.
         if (IGNORE_INITIAL_TAB_URL && initialUrl && currentUrl === initialUrl) {
-            // Ignored hostnames have absolute precedence over the initial-URL
-            // exemption, so remove an ignored tab from any managed group first.
-            const grouping = resolveTabGrouping(tab, changeInfo);
-            if (!grouping?.identity) {
-                await enforceGroupMembershipForTab(tab, grouping);
-            }
-
             // Still update lastSeenUrlByTab so we don’t loop.
             lastSeenUrlByTab.set(tabId, currentUrl);
             return;
@@ -830,7 +834,6 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 
         lastSeenUrlByTab.set(tabId, currentUrl);
 
-        const grouping = resolveTabGrouping(tab, changeInfo);
         await maybeGroupTab(tab, grouping);
 
         // Canonical semantics: this helper only ungroups singleton managed groups

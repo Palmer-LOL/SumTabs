@@ -295,7 +295,7 @@ test("keeps a real popup ignore toggle queued after the popup closes", async ({ 
       return snapshot.pending.filter((lock) => lock.name === lockName).length;
     }, storageLock)).toBeGreaterThanOrEqual(1);
 
-    await popupIgnoreToggle.check();
+    await popupIgnoreToggle.evaluate((toggle) => toggle.click());
     await expect.poll(() => settingsPage.evaluate(async (lockName) => {
       const snapshot = await navigator.locks.query();
       return snapshot.pending.filter((lock) => lock.name === lockName).length;

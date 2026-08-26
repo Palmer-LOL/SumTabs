@@ -142,12 +142,14 @@ export const test = base.extend({
         shouldIgnore,
       }),
       forceReevaluateTrackingCreatedTabs: async () => {
-        await evaluateInWorker("globalThis.__sumtabsCreatedTabs = []; globalThis.__sumtabsCreatedTabsListener = (tab) => globalThis.__sumtabsCreatedTabs.push({ id: tab.id, url: tab.pendingUrl || tab.url || '' }); chrome.tabs.onCreated.addListener(globalThis.__sumtabsCreatedTabsListener); return true;");
+        const page = await openExtensionPage(context, extensionId, "settings.html");
         try {
-          await sendExtensionMessage({ type: "sumtabs:force-reevaluate" });
+          await evaluateInWorker("globalThis.__sumtabsCreatedTabs = []; globalThis.__sumtabsCreatedTabsListener = (tab) => globalThis.__sumtabsCreatedTabs.push({ id: tab.id, url: tab.pendingUrl || tab.url || '' }); chrome.tabs.onCreated.addListener(globalThis.__sumtabsCreatedTabsListener); return true;");
+          await page.evaluate((payload) => chrome.runtime.sendMessage(payload), { type: "sumtabs:force-reevaluate" });
           return await evaluateInWorker("return globalThis.__sumtabsCreatedTabs || [];");
         } finally {
           await evaluateInWorker("if (globalThis.__sumtabsCreatedTabsListener) chrome.tabs.onCreated.removeListener(globalThis.__sumtabsCreatedTabsListener); delete globalThis.__sumtabsCreatedTabsListener; delete globalThis.__sumtabsCreatedTabs; return true;");
+          await page.close();
         }
       },
       forceReevaluateWithActiveTab: async (url) => {
