@@ -814,27 +814,27 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
         const grouping = resolveTabGrouping(tab, changeInfo);
         if (!grouping?.identity) {
             await enforceGroupMembershipForTab(tab, grouping);
-            return;
-        }
-
-        if (underMutationLock()) return;
-        if (!shouldProcessTab(tabId)) return;
-
-        const initialUrl = initialUrlByTab.get(tabId);
-
-        // If enabled, ignore grouping while the tab is still on its initial URL.
-        if (IGNORE_INITIAL_TAB_URL && initialUrl && currentUrl === initialUrl) {
-            // Still update lastSeenUrlByTab so we don’t loop.
             lastSeenUrlByTab.set(tabId, currentUrl);
-            return;
+        } else {
+            if (underMutationLock()) return;
+            if (!shouldProcessTab(tabId)) return;
+
+            const initialUrl = initialUrlByTab.get(tabId);
+
+            // If enabled, ignore grouping while the tab is still on its initial URL.
+            if (IGNORE_INITIAL_TAB_URL && initialUrl && currentUrl === initialUrl) {
+                // Still update lastSeenUrlByTab so we don’t loop.
+                lastSeenUrlByTab.set(tabId, currentUrl);
+                return;
+            }
+
+            const lastUrl = lastSeenUrlByTab.get(tabId);
+            if (lastUrl === currentUrl) return; // no actual URL change we care about
+
+            lastSeenUrlByTab.set(tabId, currentUrl);
+
+            await maybeGroupTab(tab, grouping);
         }
-
-        const lastUrl = lastSeenUrlByTab.get(tabId);
-        if (lastUrl === currentUrl) return; // no actual URL change we care about
-
-        lastSeenUrlByTab.set(tabId, currentUrl);
-
-        await maybeGroupTab(tab, grouping);
 
         // Canonical semantics: this helper only ungroups singleton managed groups
         // when UNGROUP_SINGLETON_MANAGED_GROUPS is enabled.
