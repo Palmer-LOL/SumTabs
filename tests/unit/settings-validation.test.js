@@ -9,7 +9,9 @@ import {
     parseDomainsTextarea,
     parseHostnameRulesTextarea,
     splitNonEmptyLines,
+    validateImportedSettings,
 } from "../../settings-validation.js";
+import { DEFAULTS } from "../../defaults.js";
 
 describe("settings hostname normalization", () => {
     it.each([
@@ -111,5 +113,70 @@ describe("raw JSON coercion", () => {
         [[{ title: "Bad", domains: [], color: "chartreuse" }], "Bundle 1 has an unsupported color."],
     ])("rejects malformed JSON structures: %s", (value, message) => {
         expect(() => coerceGroupsFromJson(value)).toThrow(message);
+    });
+});
+
+describe("settings backup validation", () => {
+    it("accepts known settings with valid types and retains unknown settings", () => {
+        const settings = { ...structuredClone(DEFAULTS), futureSetting: { retained: true } };
+        expect(validateImportedSettings(settings, DEFAULTS.autoGroupPrefix)).toEqual(settings);
+    });
+
+    it("allows known settings to be omitted so imports retain their stored values", () => {
+        expect(validateImportedSettings({
+            autoGroupPrefix: DEFAULTS.autoGroupPrefix,
+            futureSetting: true,
+        }, DEFAULTS.autoGroupPrefix)).toEqual({
+            autoGroupPrefix: DEFAULTS.autoGroupPrefix,
+            futureSetting: true,
+        });
+    });
+
+    it("rejects exact domain rules shared by multiple bundles after canonicalization", () => {
+        const settings = {
+            ...structuredClone(DEFAULTS),
+            customDomainGroups: [
+                { title: "First", domains: ["example.com"] },
+                { title: "Second", domains: [" EXAMPLE.COM "] },
+            ],
+        };
+
+        expect(() => validateImportedSettings(settings, DEFAULTS.autoGroupPrefix))
+            .toThrow("contains a domain rule used by more than one bundle");
+    });
+
+    it("canonicalizes imported hostname arrays before they are stored", () => {
+        const settings = {
+            autoGroupPrefix: DEFAULTS.autoGroupPrefix,
+            commonMultipartSuffixes: [" CO.UK ", "co.uk", "com.au\nORG.UK", "  "],
+            excludedFromRootCollapse: [" WWW.Example.COM "],
+            ignoredHostnames: ["Docs.Example.com", " docs.example.com "],
+        };
+
+        expect(validateImportedSettings(settings, DEFAULTS.autoGroupPrefix)).toEqual({
+            autoGroupPrefix: DEFAULTS.autoGroupPrefix,
+            commonMultipartSuffixes: ["co.uk", "com.au", "org.uk"],
+            excludedFromRootCollapse: ["www.example.com"],
+            ignoredHostnames: ["docs.example.com"],
+        });
+        expect(settings.commonMultipartSuffixes).toEqual([" CO.UK ", "co.uk", "com.au\nORG.UK", "  "]);
+    });
+
+    it.each([
+        ["autoGroupPrefix", "other", "required SumTabs managed-group prefix"],
+        ["minTabsToGroup", "2", "must be a whole number"],
+        ["collapseOtherGroupsOnNavEvents", 1, "must be true or false"],
+        ["keepManagedGroupsAtFront", null, "must be true or false"],
+        ["ungroupSingletonManagedGroups", "false", "must be true or false"],
+        ["ignoreInitialTabUrlForGrouping", 0, "must be true or false"],
+        ["ignoreInitialTabUrlForEnforcement", undefined, "must be true or false"],
+        ["commonMultipartSuffixes", "co.uk", "must be an array of hostnames"],
+        ["excludedFromRootCollapse", [1], "must be an array of hostnames"],
+        ["ignoredHostnames", ["https://example.com"], "contains an invalid hostname"],
+        ["customDomainGroups", "not-an-array", "top-level JSON value must be an array"],
+        ["customDomainGroups", [{ title: "Invalid", domains: [1] }], "domains array containing only strings"],
+    ])("rejects malformed %s without normalizing it into storage", (key, value, message) => {
+        const settings = { ...structuredClone(DEFAULTS), [key]: value };
+        expect(() => validateImportedSettings(settings, DEFAULTS.autoGroupPrefix)).toThrow(message);
     });
 });

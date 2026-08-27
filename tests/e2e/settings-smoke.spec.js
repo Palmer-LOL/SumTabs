@@ -1,4 +1,5 @@
 import { test, expect } from "./fixtures.js";
+import { readFile } from "node:fs/promises";
 
 test.beforeEach(async ({ extensionApi }) => {
   await extensionApi.resetStorage();
@@ -37,6 +38,76 @@ test("discards editor changes without replacing saved settings", async ({ extens
   await expect(threshold).toHaveValue("3");
   await expect(settingsPage.getByRole("button", { name: "Save changes" })).toBeDisabled();
   await expect.poll(async () => (await extensionApi.getStorage()).minTabsToGroup).toBe(3);
+});
+
+test("exports synchronized settings and imports a backup", async ({ extensionPage, extensionApi }) => {
+  await extensionApi.setStorage({ minTabsToGroup: 3, futureSetting: { retained: true } });
+  const settingsPage = await extensionPage("settings.html");
+  await settingsPage.getByText("Advanced behavior").click();
+
+  const downloadPromise = settingsPage.waitForEvent("download");
+  await settingsPage.getByRole("button", { name: "Export settings" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/^sumtabs-settings-\d{4}-\d{2}-\d{2}\.json$/);
+  const exported = JSON.parse(await readFile(await download.path(), "utf8"));
+  expect(exported).toMatchObject({
+    format: "sumtabs-settings",
+    version: 1,
+    settings: {
+      autoGroupPrefix: "∑ ",
+      minTabsToGroup: 3,
+      futureSetting: { retained: true },
+    },
+  });
+
+  const imported = structuredClone(exported);
+  imported.settings.minTabsToGroup = 4;
+  imported.settings.customDomainGroups = [{ title: "Restored", domains: ["example.com", "example.org"] }];
+  settingsPage.once("dialog", (dialog) => dialog.accept());
+  await settingsPage.locator("#importSettingsFile").setInputFiles({
+    name: "sumtabs-settings.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(imported)),
+  });
+
+  await expect(settingsPage.getByRole("status").filter({ hasText: "Settings imported." })).toBeVisible();
+  await expect(settingsPage.getByLabel("Group when at least this many matching tabs exist")).toHaveValue("4");
+  await expect.poll(async () => await extensionApi.getStorage()).toMatchObject({
+    minTabsToGroup: 4,
+    futureSetting: { retained: true },
+    customDomainGroups: [{ title: "Restored", domains: ["example.com", "example.org"] }],
+  });
+});
+
+test("rejects malformed imported settings before writing to sync storage", async ({ extensionPage, extensionApi }) => {
+  await extensionApi.setStorage({ minTabsToGroup: 3, futureSetting: { retained: true } });
+  const settingsPage = await extensionPage("settings.html");
+  const malformed = {
+    format: "sumtabs-settings",
+    version: 1,
+    settings: {
+      ...structuredClone((await extensionApi.getStorage())),
+      autoGroupPrefix: "∑ ",
+      collapseOtherGroupsOnNavEvents: true,
+      keepManagedGroupsAtFront: true,
+      ungroupSingletonManagedGroups: false,
+      ignoreInitialTabUrlForGrouping: true,
+      ignoreInitialTabUrlForEnforcement: true,
+      commonMultipartSuffixes: "co.uk",
+      excludedFromRootCollapse: [],
+      ignoredHostnames: [],
+      customDomainGroups: [],
+    },
+  };
+
+  await settingsPage.locator("#importSettingsFile").setInputFiles({
+    name: "malformed-sumtabs-settings.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(malformed)),
+  });
+
+  await expect(settingsPage.getByRole("status").filter({ hasText: "must be an array of hostnames" })).toBeVisible();
+  expect(await extensionApi.getStorage()).toEqual({ minTabsToGroup: 3, futureSetting: { retained: true } });
 });
 
 test("saves and reloads canonical ignored hostnames through sync storage", async ({ extensionPage, extensionApi }) => {
@@ -178,4 +249,64 @@ test("coordinates the final conflict check and write with popup ignore updates",
   await expect(settingsPage.getByLabel("Ignore these specific hostnames")).toHaveValue("settings-draft.example");
   await expect.poll(async () => (await extensionApi.getStorage()).ignoredHostnames).toEqual(["popup.example"]);
   await popupWriter.close();
+});
+
+test("keeps a real popup ignore toggle queued after the popup closes", async ({ context, httpServer, extensionPage, extensionApi }) => {
+  const storageLock = "sumtabs:ignored-hostnames-storage";
+  const targetUrl = httpServer.url("/popup-settings-lock-race");
+  const targetHostname = new URL(targetUrl).hostname;
+  await extensionApi.setStorage({ ignoredHostnames: ["original.example"] });
+  const targetPage = await context.newPage();
+  await targetPage.goto(targetUrl);
+
+  const settingsPage = await extensionPage("settings.html");
+  await settingsPage.getByText("Site separation rules").click();
+  await settingsPage.getByLabel("Ignore these specific hostnames").fill("settings-draft.example");
+
+  const popupPage = await extensionPage("popup.html");
+  await extensionApi.evaluate(`
+    const targetUrl = ${JSON.stringify(targetUrl)};
+    const tabs = await callbackify(chrome.tabs.query.bind(chrome.tabs), {});
+    const targetTab = tabs.find((tab) => tab.url === targetUrl);
+    if (!targetTab) throw new Error("Target tab not found");
+    await callbackify(chrome.tabs.update.bind(chrome.tabs), targetTab.id, { active: true });
+    return true;
+  `);
+  await popupPage.reload();
+  await expect(popupPage.locator("#activeHostname")).toHaveText(targetHostname);
+  await popupPage.getByText("Change how this site is handled").click();
+  const popupIgnoreToggle = popupPage.getByRole("checkbox", { name: `Ignore ${targetHostname}` });
+  await expect(popupIgnoreToggle).toBeVisible();
+
+  await settingsPage.evaluate((lockName) => {
+    globalThis.releaseIgnoredHostnamesTestLock = null;
+    globalThis.ignoredHostnamesTestLockHeld = false;
+    globalThis.ignoredHostnamesTestLock = navigator.locks.request(lockName, async () => {
+      globalThis.ignoredHostnamesTestLockHeld = true;
+      await new Promise((resolve) => { globalThis.releaseIgnoredHostnamesTestLock = resolve; });
+    });
+  }, storageLock);
+  await expect.poll(() => settingsPage.evaluate(() => globalThis.ignoredHostnamesTestLockHeld)).toBe(true);
+
+  try {
+    await settingsPage.getByRole("button", { name: "Save changes" }).click();
+    await expect.poll(() => settingsPage.evaluate(async (lockName) => {
+      const snapshot = await navigator.locks.query();
+      return snapshot.pending.filter((lock) => lock.name === lockName).length;
+    }, storageLock)).toBeGreaterThanOrEqual(1);
+
+    await popupIgnoreToggle.evaluate((toggle) => toggle.click());
+    await expect.poll(() => settingsPage.evaluate(async (lockName) => {
+      const snapshot = await navigator.locks.query();
+      return snapshot.pending.filter((lock) => lock.name === lockName).length;
+    }, storageLock)).toBe(2);
+    await popupPage.close();
+  } finally {
+    await settingsPage.evaluate(() => globalThis.releaseIgnoredHostnamesTestLock?.());
+  }
+
+  await expect.poll(async () => (await extensionApi.getStorage()).ignoredHostnames).toEqual([
+    "settings-draft.example",
+    targetHostname,
+  ]);
 });

@@ -77,7 +77,7 @@ test("preserves a user-created non-managed group during reevaluation", async ({ 
 test("ignored tabs neither form nor join managed groups", async ({ context, httpServer, extensionApi }) => {
   const firstUrl = httpServer.url("/ignored-a");
   const secondUrl = httpServer.url("/ignored-b");
-  await extensionApi.setStorage({ ignoredHostnames: ["127.0.0.1"] });
+  await extensionApi.updateIgnoredHostname("127.0.0.1", true);
   await openHttpPage(context, firstUrl);
   await openHttpPage(context, secondUrl);
   const createdTabs = await extensionApi.forceReevaluateTrackingCreatedTabs();
@@ -119,18 +119,16 @@ test("reevaluation removes ignored unpinned tabs from managed groups but preserv
   await extensionApi.forceReevaluate();
   await expectTabsGrouped(extensionApi, managedUrls);
 
-  await extensionApi.setStorage({ ignoredHostnames: ["127.0.0.1"] });
-  await extensionApi.forceReevaluate();
+  const response = await extensionApi.updateIgnoredHostname("127.0.0.1", true);
+  expect(response).toEqual({ ok: true });
 
-  await expect.poll(async () => {
-    const managedTabs = await extensionApi.tabsByUrls(managedUrls);
-    const userTabs = await extensionApi.tabsByUrls(userUrls);
-    return {
-      managedGroupIds: managedTabs.map((tab) => tab?.groupId),
-      userGroupIds: userTabs.map((tab) => tab?.groupId),
-      userTitle: (await extensionApi.groupById(userGroup.groupId)).title,
-    };
-  }).toEqual({
+  const managedTabs = await extensionApi.tabsByUrls(managedUrls);
+  const userTabs = await extensionApi.tabsByUrls(userUrls);
+  expect({
+    managedGroupIds: managedTabs.map((tab) => tab?.groupId),
+    userGroupIds: userTabs.map((tab) => tab?.groupId),
+    userTitle: (await extensionApi.groupById(userGroup.groupId)).title,
+  }, "the update acknowledgement should wait for strict membership enforcement").toEqual({
     managedGroupIds: [noGroupId, noGroupId],
     userGroupIds: [userGroup.groupId, userGroup.groupId],
     userTitle: "Manual ignored hosts",
@@ -156,11 +154,14 @@ test("ignored-host reevaluation bypasses the unified initial-URL exemption", asy
   ]);
 });
 
-test("returning to an ignored initial URL removes a tab from its managed group", async ({ context, httpServer, extensionApi }) => {
+test("returning to an ignored initial URL removes it and cleans up its managed singleton", async ({ context, httpServer, extensionApi }) => {
   const initialUrl = httpServer.url("/ignored-initial").replace("127.0.0.1", "localhost");
   const groupedUrl = httpServer.url("/grouped-after-initial");
   const companionUrl = httpServer.url("/grouped-companion");
-  await extensionApi.setStorage({ ignoredHostnames: ["localhost"] });
+  await extensionApi.setStorage({
+    ignoredHostnames: ["localhost"],
+    ungroupSingletonManagedGroups: true,
+  });
 
   const returningPage = await openHttpPage(context, initialUrl);
   await returningPage.goto(groupedUrl);
@@ -173,7 +174,95 @@ test("returning to an ignored initial URL removes a tab from its managed group",
   await returningPage.waitForTimeout(400);
   await returningPage.goto(initialUrl);
 
-  await expect.poll(async () => (await extensionApi.tabByUrl(initialUrl))?.groupId ?? noGroupId, {
-    message: "an ignored initial URL should not remain in a managed group",
+  await expect.poll(async () => (await extensionApi.tabsByUrls([initialUrl, companionUrl])).map((tab) => tab?.groupId ?? noGroupId), {
+    message: "the ignored tab should leave its managed group and the remaining singleton should be cleaned up",
+  }).toEqual([noGroupId, noGroupId]);
+});
+
+test("ignored navigation still collapses the remaining managed group", async ({ context, httpServer, extensionApi }) => {
+  const groupedUrl = httpServer.url("/collapse-source");
+  const companionUrl = httpServer.url("/collapse-companion");
+  const ignoredUrl = httpServer.url("/collapse-ignored").replace("127.0.0.1", "localhost");
+  await extensionApi.setStorage({
+    collapseOtherGroupsOnNavEvents: true,
+    ignoredHostnames: ["localhost"],
+    ungroupSingletonManagedGroups: false,
+  });
+
+  const navigatingPage = await openHttpPage(context, groupedUrl);
+  await openHttpPage(context, companionUrl);
+  await extensionApi.forceReevaluate();
+  await expectTabsGrouped(extensionApi, [groupedUrl, companionUrl]);
+
+  const sourceGroupId = (await extensionApi.tabByUrl(groupedUrl)).groupId;
+  await extensionApi.setGroupCollapsed(sourceGroupId, false);
+  await navigatingPage.waitForTimeout(400);
+  await navigatingPage.goto(ignoredUrl);
+
+  await expect.poll(async () => {
+    const ignoredTab = await extensionApi.tabByUrl(ignoredUrl);
+    const companionTab = await extensionApi.tabByUrl(companionUrl);
+    const group = companionTab?.groupId === noGroupId
+      ? null
+      : await extensionApi.groupById(companionTab.groupId);
+    return {
+      ignoredGroupId: ignoredTab?.groupId ?? noGroupId,
+      companionGroupId: companionTab?.groupId ?? noGroupId,
+      collapsed: group?.collapsed ?? false,
+    };
+  }, { message: "ignored navigation should still run the configured collapse tail" }).toEqual({
+    ignoredGroupId: noGroupId,
+    companionGroupId: sourceGroupId,
+    collapsed: true,
+  });
+});
+
+test("a tab returning from an ignored hostname to the same eligible URL regroups", async ({ context, httpServer, extensionApi }) => {
+  const eligibleUrl = httpServer.url("/same-url-return");
+  const companionUrl = httpServer.url("/same-url-companion");
+  const ignoredUrl = httpServer.url("/same-url-ignored").replace("127.0.0.1", "localhost");
+  await extensionApi.setStorage({
+    ignoreInitialTabUrlForGrouping: false,
+    ignoredHostnames: ["localhost"],
+  });
+
+  const returningPage = await openHttpPage(context, eligibleUrl);
+  await openHttpPage(context, companionUrl);
+  await extensionApi.forceReevaluate();
+  await expectTabsGrouped(extensionApi, [eligibleUrl, companionUrl]);
+
+  await returningPage.waitForTimeout(400);
+  await returningPage.goto(ignoredUrl);
+  await expect.poll(async () => (await extensionApi.tabByUrl(ignoredUrl))?.groupId ?? noGroupId, {
+    message: "the ignored URL should leave the managed group before the return navigation",
+  }).toBe(noGroupId);
+
+  // The eligible return must be a distinct user navigation after the normal
+  // per-tab debounce window, not a test-only burst of lifecycle events.
+  await returningPage.waitForTimeout(800);
+  await returningPage.goto(eligibleUrl);
+  await expectTabsGrouped(extensionApi, [eligibleUrl, companionUrl]);
+});
+
+test("creating an ignored initial URL inside a managed group removes it immediately", async ({ context, httpServer, extensionApi }) => {
+  const managedUrls = [httpServer.url("/managed-opener-a"), httpServer.url("/managed-opener-b")];
+  const ignoredUrl = httpServer.url("/ignored-group-child").replace("127.0.0.1", "localhost");
+  await extensionApi.setStorage({
+    ignoreInitialTabUrlForGrouping: true,
+    ignoredHostnames: ["localhost"],
+  });
+
+  const openerPage = await openHttpPage(context, managedUrls[0]);
+  await openHttpPage(context, managedUrls[1]);
+  await extensionApi.forceReevaluate();
+  await expectTabsGrouped(extensionApi, managedUrls);
+
+  const childPagePromise = context.waitForEvent("page");
+  await openerPage.evaluate((url) => window.open(url, "_blank"), ignoredUrl);
+  const childPage = await childPagePromise;
+  await childPage.waitForLoadState();
+
+  await expect.poll(async () => (await extensionApi.tabByUrl(ignoredUrl))?.groupId ?? noGroupId, {
+    message: "an ignored tab created inside a managed group should be removed despite its initial-URL exemption",
   }).toBe(noGroupId);
 });

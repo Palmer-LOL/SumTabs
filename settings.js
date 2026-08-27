@@ -11,6 +11,7 @@ import {
     normalizeStoredGroups,
     parseDomainsTextarea,
     parseHostnameRulesTextarea,
+    validateImportedSettings,
 } from "./settings-validation.js";
 
 const $ = (id) => document.getElementById(id);
@@ -25,6 +26,8 @@ let savingIgnoredHostnamesValue = null;
 let ignoredHostnamesBaseline = "";
 let ignoredHostnamesConflict = null;
 const IGNORED_HOSTNAMES_STORAGE_LOCK = "sumtabs:ignored-hostnames-storage";
+const SETTINGS_BACKUP_FORMAT = "sumtabs-settings";
+const SETTINGS_BACKUP_VERSION = 1;
 
 function storedIgnoredHostnamesText(settings) {
     return arrayToLines(settings.ignoredHostnames ?? DEFAULTS.ignoredHostnames);
@@ -545,6 +548,59 @@ async function discardChanges() {
     updateSaveState({ message: "Unsaved changes discarded.", state: "neutral" });
 }
 
+async function exportSettings() {
+    const stored = await chrome.storage.sync.get(null);
+    const backup = {
+        format: SETTINGS_BACKUP_FORMAT,
+        version: SETTINGS_BACKUP_VERSION,
+        settings: { ...structuredClone(DEFAULTS), ...stored },
+    };
+    const blob = new Blob([`${JSON.stringify(backup, null, 2)}\n`], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `sumtabs-settings-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+    updateSaveState({ message: "Settings exported.", state: "valid" });
+}
+
+async function importSettingsFile(file) {
+    let backup;
+    try {
+        backup = JSON.parse(await file.text());
+    } catch {
+        throw new Error("The selected file is not valid JSON.");
+    }
+
+    if (backup?.format !== SETTINGS_BACKUP_FORMAT
+        || backup?.version !== SETTINGS_BACKUP_VERSION
+        || !backup.settings
+        || typeof backup.settings !== "object"
+        || Array.isArray(backup.settings)) {
+        throw new Error("The selected file is not a supported SumTabs settings backup.");
+    }
+    const importedSettings = validateImportedSettings(backup.settings, DEFAULTS.autoGroupPrefix);
+    if (!window.confirm(
+        "Import these settings now?\n\nMatching synchronized settings will be overwritten. Settings not included in the backup will be retained."
+    )) return;
+
+    loading = true;
+    try {
+        await navigator.locks.request(IGNORED_HOSTNAMES_STORAGE_LOCK, () => (
+            chrome.storage.sync.set(importedSettings)
+        ));
+        const stored = await chrome.storage.sync.get(DEFAULTS);
+        populateForm(stored);
+        savedSnapshot = captureUiSnapshot();
+        ignoredHostnamesBaseline = storedIgnoredHostnamesText(stored);
+        clearIgnoredHostnamesConflict();
+    } finally {
+        loading = false;
+    }
+    updateSaveState({ message: "Settings imported.", state: "valid" });
+}
+
 function bindEvents() {
     const simpleFields = [
         "minTabsToGroup",
@@ -599,6 +655,22 @@ function bindEvents() {
         });
     });
     $("reset").addEventListener("click", loadDefaultsIntoEditor);
+    $("exportSettings").addEventListener("click", () => {
+        exportSettings().catch((error) => {
+            console.error("Failed to export SumTabs settings", error);
+            updateSaveState({ message: "Could not export settings. Try again.", state: "error" });
+        });
+    });
+    $("importSettings").addEventListener("click", () => $("importSettingsFile").click());
+    $("importSettingsFile").addEventListener("change", (event) => {
+        const [file] = event.target.files;
+        event.target.value = "";
+        if (!file) return;
+        importSettingsFile(file).catch((error) => {
+            console.error("Failed to import SumTabs settings", error);
+            updateSaveState({ message: error.message || "Could not import settings.", state: "error" });
+        });
+    });
 
     $("useStoredIgnoredHostnames").addEventListener("click", () => {
         if (!ignoredHostnamesConflict) return;

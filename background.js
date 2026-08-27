@@ -72,13 +72,49 @@ chrome.runtime.onInstalled?.addListener(async () => {
 });
 
 // Live-update if user changes options
+let reevaluationQueue = Promise.resolve();
+let ignoredHostnameUpdateQueue = Promise.resolve();
+const ignoredHostnameChangeWaiters = [];
+const IGNORED_HOSTNAMES_STORAGE_LOCK = "sumtabs:ignored-hostnames-storage";
+
+function enqueueForceReevaluation() {
+    const reevaluation = reevaluationQueue
+        .catch(() => {})
+        .then(() => forceReevaluateAllWindows());
+    reevaluationQueue = reevaluation;
+    return reevaluation;
+}
+
+function ignoredHostnamesSignature(values) {
+    return JSON.stringify(
+        [...new Set((values ?? [])
+            .map(value => String(value).trim().toLowerCase())
+            .filter(Boolean))]
+            .sort(),
+    );
+}
+
 chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "sync") return;
     for (const [k, v] of Object.entries(changes)) settings[k] = v.newValue;
     rebuildDerived();
 
     if (changes.keepManagedGroupsAtFront?.newValue || changes.ignoredHostnames) {
-        forceReevaluateAllWindows().catch(() => {});
+        const reevaluation = enqueueForceReevaluation();
+
+        if (changes.ignoredHostnames) {
+            const signature = ignoredHostnamesSignature(changes.ignoredHostnames.newValue);
+            const matchingWaiters = ignoredHostnameChangeWaiters
+                .filter(waiter => waiter.signature === signature);
+            for (const waiter of matchingWaiters) {
+                ignoredHostnameChangeWaiters.splice(ignoredHostnameChangeWaiters.indexOf(waiter), 1);
+                reevaluation.then(waiter.resolve, waiter.reject);
+            }
+        }
+
+        // Storage changes without a popup awaiting completion still need error
+        // isolation so the service worker does not produce an unhandled rejection.
+        reevaluation.catch(() => {});
     }
 });
 
@@ -499,7 +535,14 @@ async function maybeGroupTab(tab, currentGrouping, originalActiveTabId = null) {
     if (IGNORE_INITIAL_TAB_URL) {
         const initialUrl = initialUrlByTab.get(tab.id);
         const currentUrl = tab.url || tab.pendingUrl;
-        if (initialUrl && currentUrl && currentUrl === initialUrl) return;
+        if (initialUrl && currentUrl && currentUrl === initialUrl) {
+            // The initial-URL exemption must not preserve ignored hostnames in
+            // managed groups, including tabs created directly inside a group.
+            if (!currentGrouping?.identity) {
+                await enforceGroupMembershipForTab(tab, currentGrouping);
+            }
+            return;
+        }
     }
 
     const groupIdentity = currentGrouping?.identity;
@@ -664,6 +707,54 @@ async function forceReevaluateAllWindows() {
     }
 }
 
+async function updateIgnoredHostname(hostname, shouldIgnore) {
+    const normalizedHostname = String(hostname ?? "").trim().toLowerCase();
+    if (!normalizedHostname) throw new Error("A hostname is required.");
+
+    const stored = await chrome.storage.sync.get(DEFAULTS);
+    const ignoredHostnames = new Set(
+        (stored.ignoredHostnames ?? [])
+            .map(value => String(value).trim().toLowerCase())
+            .filter(Boolean),
+    );
+    if (shouldIgnore) ignoredHostnames.add(normalizedHostname);
+    else ignoredHostnames.delete(normalizedHostname);
+
+    const nextIgnoredHostnames = [...ignoredHostnames];
+    const currentSignature = ignoredHostnamesSignature(stored.ignoredHostnames);
+    const nextSignature = ignoredHostnamesSignature(nextIgnoredHostnames);
+    if (currentSignature === nextSignature) {
+        await enqueueForceReevaluation();
+        return;
+    }
+
+    let resolveChange;
+    let rejectChange;
+    const changeCompleted = new Promise((resolve, reject) => {
+        resolveChange = resolve;
+        rejectChange = reject;
+    });
+    const waiter = { signature: nextSignature, resolve: resolveChange, reject: rejectChange };
+    ignoredHostnameChangeWaiters.push(waiter);
+
+    try {
+        await chrome.storage.sync.set({ ignoredHostnames: nextIgnoredHostnames });
+        await changeCompleted;
+    } catch (error) {
+        const waiterIndex = ignoredHostnameChangeWaiters.indexOf(waiter);
+        if (waiterIndex !== -1) ignoredHostnameChangeWaiters.splice(waiterIndex, 1);
+        throw error;
+    }
+}
+
+function enqueueIgnoredHostnameUpdate(hostname, shouldIgnore) {
+    const update = ignoredHostnameUpdateQueue
+        .catch(() => {})
+        .then(() => updateIgnoredHostname(hostname, shouldIgnore));
+    ignoredHostnameUpdateQueue = update;
+    return update;
+}
+
 // -------------------- EVENT HANDLERS --------------------
 
 chrome.tabs.onCreated.addListener(async (tab) => {
@@ -671,9 +762,6 @@ chrome.tabs.onCreated.addListener(async (tab) => {
         await settingsReady;
         if (!tab || tab.id == null) return;
         if (tab.pinned) return;
-
-        if (underMutationLock()) return;
-        if (!shouldProcessTab(tab.id)) return;
 
         // Use pendingUrl first; some tabs start there before tab.url is set.
         const url = tab.pendingUrl || tab.url;
@@ -684,6 +772,14 @@ chrome.tabs.onCreated.addListener(async (tab) => {
         if (u?.href) initialUrlByTab.set(tab.id, u.href);
 
         const grouping = resolveTabGrouping(tab);
+        if (!grouping?.identity) {
+            await enforceGroupMembershipForTab(tab, grouping);
+            return;
+        }
+
+        if (underMutationLock()) return;
+        if (!shouldProcessTab(tab.id)) return;
+
         await maybeGroupTab(tab, grouping);
 
         if (COLLAPSE_OTHER_GROUPS_ON_NAV_EVENTS) {
@@ -700,9 +796,6 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
         if (!tab || tab.id == null) return;
         if (tab.pinned) return;
 
-        if (underMutationLock()) return;
-        if (!shouldProcessTab(tabId)) return;
-
         // Only react on meaningful lifecycle updates, but detect URL changes ourselves.
         // Brave sometimes does NOT populate changeInfo.url.
         const isMeaningful =
@@ -718,29 +811,30 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
         const u = safeParseUrl(currentUrl);
         if (!isWebUrl(u)) return;
 
-        const initialUrl = initialUrlByTab.get(tabId);
+        const grouping = resolveTabGrouping(tab, changeInfo);
+        if (!grouping?.identity) {
+            await enforceGroupMembershipForTab(tab, grouping);
+            lastSeenUrlByTab.set(tabId, currentUrl);
+        } else {
+            if (underMutationLock()) return;
+            if (!shouldProcessTab(tabId)) return;
 
-        // If enabled, ignore grouping while the tab is still on its initial URL.
-        if (IGNORE_INITIAL_TAB_URL && initialUrl && currentUrl === initialUrl) {
-            // Ignored hostnames have absolute precedence over the initial-URL
-            // exemption, so remove an ignored tab from any managed group first.
-            const grouping = resolveTabGrouping(tab, changeInfo);
-            if (!grouping?.identity) {
-                await enforceGroupMembershipForTab(tab, grouping);
+            const initialUrl = initialUrlByTab.get(tabId);
+
+            // If enabled, ignore grouping while the tab is still on its initial URL.
+            if (IGNORE_INITIAL_TAB_URL && initialUrl && currentUrl === initialUrl) {
+                // Still update lastSeenUrlByTab so we don’t loop.
+                lastSeenUrlByTab.set(tabId, currentUrl);
+                return;
             }
 
-            // Still update lastSeenUrlByTab so we don’t loop.
+            const lastUrl = lastSeenUrlByTab.get(tabId);
+            if (lastUrl === currentUrl) return; // no actual URL change we care about
+
             lastSeenUrlByTab.set(tabId, currentUrl);
-            return;
+
+            await maybeGroupTab(tab, grouping);
         }
-
-        const lastUrl = lastSeenUrlByTab.get(tabId);
-        if (lastUrl === currentUrl) return; // no actual URL change we care about
-
-        lastSeenUrlByTab.set(tabId, currentUrl);
-
-        const grouping = resolveTabGrouping(tab, changeInfo);
-        await maybeGroupTab(tab, grouping);
 
         // Canonical semantics: this helper only ungroups singleton managed groups
         // when UNGROUP_SINGLETON_MANAGED_GROUPS is enabled.
@@ -795,14 +889,22 @@ chrome.tabGroups.onUpdated?.addListener((group) => {
 });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message?.type !== "sumtabs:force-reevaluate") return undefined;
+    const isForceReevaluation = message?.type === "sumtabs:force-reevaluate";
+    const isIgnoredHostnameUpdate = message?.type === "sumtabs:update-ignored-hostname";
+    if (!isForceReevaluation && !isIgnoredHostnameUpdate) return undefined;
 
     (async () => {
         try {
-            await forceReevaluateAllWindows();
+            if (isIgnoredHostnameUpdate) {
+                await navigator.locks.request(IGNORED_HOSTNAMES_STORAGE_LOCK, () => (
+                    enqueueIgnoredHostnameUpdate(message.hostname, message.shouldIgnore === true)
+                ));
+            } else {
+                await enqueueForceReevaluation();
+            }
             sendResponse({ ok: true });
         } catch (error) {
-            console.error("Failed to force tab reevaluation", error);
+            console.error("Failed to process tab reevaluation request", error);
             sendResponse({ ok: false, error: String(error) });
         }
     })();

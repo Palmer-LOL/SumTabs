@@ -88,11 +88,12 @@ To configure behavior:
 - Toggle **Collapse other groups when navigating/creating tabs** to enable or disable focus mode.
 - Set **Group when at least this many matching tabs exist** to control when grouping starts (minimum `2`, default `2`).
 - Toggle **Ungroup managed groups when only one tab remains** to remove singleton managed groups automatically (default is off, so singleton managed groups remain grouped).
-- Toggle **Ignore initial tab URL for grouping** and **Ignore initial tab URL for enforcement** to avoid grouping while tabs are still on their initial load.
+- Toggle **Ignore a tab’s initial URL while grouping and enforcing placement** to prevent SumTabs from grouping, reassigning, or enforcing placement for a newly created tab while it remains on the HTTP(S) URL with which it was created. The tab can remain in an existing group during this exemption unless its hostname is listed under **Ignore these specific hostnames**; that rule takes precedence and removes the tab from a managed group. Tabs created on non-HTTP(S) pages can be grouped as soon as they navigate to HTTP(S).
 - Add entries under **Domain-wide subdomain separation rules** (one per line) to keep matching subdomain families separate when needed.
 - Add **Exact-host separation rules** (one per line) to keep specific hosts separate from their broader domain grouping.
 - Add hostnames under **Ignore these specific hostnames** (one per line), then select **Save changes**, to keep exact matches unmanaged. Reset loads the empty default into the editor; save to persist it.
 - Use the **Custom domain bundles** editor to create/manage domain groupings and optionally choose a bundle color.
+- Under **Advanced behavior**, use **Export settings** to download a JSON backup of synchronized settings and **Import settings** to restore one later. The device-local appearance preference is not included.
 
 ---
 
