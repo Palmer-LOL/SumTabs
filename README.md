@@ -200,7 +200,7 @@ The Vitest suite covers:
 
 The Playwright suite currently defines 26 cases in three files:
 
-- **2 extension startup/page cases:** unpacked MV3 startup and service-worker path; options-page navigation; and direct popup loading with its modules, core controls, section order, window summary, canonical close-all action, and no uncaught page errors.
+- **2 extension startup/page cases:** unpacked MV3 startup and service-worker path; direct options-page loading by extension URL; and direct popup loading with its modules, core controls, section order, window summary, canonical close-all action, and no uncaught page errors.
 - **13 grouping cases:** two-tab grouping and the single-tab threshold; pinned-tab protection; user-group protection; ignored-host exclusion; active-tab preservation at first, middle, and last positions; ignored-host acknowledgement after managed-group cleanup while preserving user groups; initial-URL exemption bypass; singleton cleanup on ignored navigation; configured collapse behavior; regrouping after returning from an ignored hostname; and immediate removal of an ignored tab created inside a managed group.
 - **11 settings cases:** threshold save/reload; discard; export/import with unknown-key preservation; malformed-import rejection; ignored-host canonicalization; alignment of both legacy initial-URL keys; unsaved bundle preservation during a live ignore-list update; explicit resolution of ignore-list conflicts (including defaults); settings/popup lock coordination; and completion of a queued popup ignore update after the popup closes.
 
