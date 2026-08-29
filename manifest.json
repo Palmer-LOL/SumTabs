@@ -1,7 +1,7 @@
 {
 	"manifest_version": 3,
 	"name": "SumTabs",
-	"version": "0.33.3",
+	"version": "0.33.4",
 	"description": "Automatically groups tabs by domain",
 	"icons": {
 		"16": "assets/icons/16.png",

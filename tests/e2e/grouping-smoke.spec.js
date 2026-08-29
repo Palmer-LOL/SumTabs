@@ -1,4 +1,4 @@
-import { test, expect, managedPrefix, noGroupId, openHttpPage, expectTabsGrouped } from "./fixtures.js";
+import { test, expect, managedPrefix, noGroupId, openHttpPage, expectTabsGrouped, settingsPath } from "./fixtures.js";
 
 test.beforeEach(async ({ extensionApi }) => {
   await extensionApi.resetStorage();
@@ -71,6 +71,59 @@ test("preserves a user-created non-managed group during reevaluation", async ({ 
     title,
     sameGroup: true,
     tabIds: created.tabs.map((tab) => tab.id).sort((a, b) => a - b),
+  });
+});
+
+test("focus mode collapses managed groups without changing an active user-created group", async ({ context, httpServer, extensionApi, extensionPage }) => {
+  const managedUrls = [httpServer.url("/focus-managed-a"), httpServer.url("/focus-managed-b")];
+  const userUrls = [httpServer.url("/focus-user-a"), httpServer.url("/focus-user-b")];
+  const userTitle = "Manual focus group";
+
+  await extensionApi.setStorage({ collapseOtherGroupsOnNavEvents: true });
+  for (const url of [...managedUrls, ...userUrls]) await openHttpPage(context, url);
+  const userGroup = await extensionApi.createUserGroup(userUrls, userTitle);
+  await extensionApi.forceReevaluate();
+  await expectTabsGrouped(extensionApi, managedUrls);
+
+  const [managedTab] = await extensionApi.tabsByUrls([managedUrls[0]]);
+  const managedGroupId = managedTab.groupId;
+  const settingsPage = await extensionPage(settingsPath);
+  await extensionApi.setGroupCollapsed(managedGroupId, false);
+  await extensionApi.setGroupCollapsed(userGroup.groupId, false);
+  await extensionApi.evaluate(`const targetUrl = ${JSON.stringify(userUrls[0])}; const tabs = await callbackify(chrome.tabs.query.bind(chrome.tabs), {}); const tab = tabs.find((candidate) => candidate.url === targetUrl); if (!tab) throw new Error('Tab not found for activation'); await callbackify(chrome.tabs.update.bind(chrome.tabs), tab.id, { active: true }); return true;`);
+
+  await expect.poll(async () => (await extensionApi.groupById(managedGroupId)).collapsed, {
+    message: "activation should finish collapsing the managed group before the forced-reevaluation prerequisite is reset",
+  }).toBe(true);
+  await extensionApi.setGroupCollapsed(managedGroupId, false);
+  await expect.poll(async () => (await extensionApi.groupById(managedGroupId)).collapsed, {
+    message: "the managed group should be confirmed expanded before forced reevaluation",
+  }).toBe(false);
+  await expect.poll(async () => (await extensionApi.tabByUrl(userUrls[0]))?.active, {
+    message: "the intended user-created-group tab should be active immediately before forced reevaluation",
+  }).toBe(true);
+  const response = await settingsPage.evaluate((message) => chrome.runtime.sendMessage(message), {
+    type: "sumtabs:force-reevaluate",
+  });
+  expect(response).toEqual({ ok: true });
+
+  await expect.poll(async () => {
+    const [managedGroup, refreshedUserGroup, userGroupTabs] = await Promise.all([
+      extensionApi.groupById(managedGroupId),
+      extensionApi.groupById(userGroup.groupId),
+      extensionApi.evaluate(`return await callbackify(chrome.tabs.query.bind(chrome.tabs), { groupId: ${userGroup.groupId} });`),
+    ]);
+    return {
+      managedCollapsed: managedGroup.collapsed,
+      userCollapsed: refreshedUserGroup.collapsed,
+      userTitle: refreshedUserGroup.title,
+      userTabIds: userGroupTabs.map((tab) => tab.id).sort((a, b) => a - b),
+    };
+  }, { message: "focus mode should collapse managed groups while leaving the active user-created group untouched" }).toEqual({
+    managedCollapsed: true,
+    userCollapsed: false,
+    userTitle,
+    userTabIds: userGroup.tabs.map((tab) => tab.id).sort((a, b) => a - b),
   });
 });
 

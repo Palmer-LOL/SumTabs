@@ -7,8 +7,8 @@ const GROUP_OWNERSHIP_PROTECTED = "protected";
 export function createTabController({ chromeApi, settingsState, chromeGroups }) {
     const none = chromeApi.tabGroups.TAB_GROUP_ID_NONE;
     let reevaluationQueue = Promise.resolve();
+    const focusSchedulersByWindow = new Map();
     const lastProcessedAt = new Map();
-    const lastActiveGroupByWindow = new Map();
     const lastSeenUrlByTab = new Map();
     const initialUrlByTab = new Map();
 
@@ -230,43 +230,12 @@ export function createTabController({ chromeApi, settingsState, chromeGroups }) 
         } catch {}
     }
 
-    async function handleActivation(tabId, windowId) {
-        const tab = await chromeApi.tabs.get(tabId);
-        if (!tab) return;
-
-        const previousGroupId = lastActiveGroupByWindow.get(windowId);
-        const currentGroupId = tab.groupId != null ? tab.groupId : none;
-        const currentOwnership = await chromeGroups.classifyGroupOwnership(
-            currentGroupId,
-            { fresh: true },
-        );
-
-        // Focus mode pauses while the user is working inside a user-created group,
-        // but keep the previously active managed group tracked so it can still be
-        // collapsed when focus later moves to another managed group.
-        if (currentOwnership === GROUP_OWNERSHIP_PROTECTED) return;
-
-        lastActiveGroupByWindow.set(windowId, currentGroupId);
-
-        if (
-            previousGroupId != null
-            && previousGroupId !== none
-            && previousGroupId !== currentGroupId
-        ) {
-            await chromeGroups.setGroupCollapsed(previousGroupId, true);
-        }
-        if (currentOwnership === GROUP_OWNERSHIP_MANAGED && currentGroupId !== previousGroupId) {
-            await chromeGroups.setGroupCollapsed(currentGroupId, false);
-        }
-    }
-
     async function collapseAllGroupsExcept(windowId, keepGroupId) {
         try {
             const keepOwnership = await chromeGroups.classifyGroupOwnership(
                 keepGroupId,
                 { fresh: true },
             );
-            if (keepOwnership === GROUP_OWNERSHIP_PROTECTED) return;
 
             const tabs = await chromeApi.tabs.query({ windowId });
             const groupIds = new Set();
@@ -289,6 +258,54 @@ export function createTabController({ chromeApi, settingsState, chromeGroups }) 
                 }
             }
         } catch {}
+    }
+
+    async function applyCurrentFocusState(windowId) {
+        if (!settingsState.getRuntime().collapseOtherGroupsOnNavEvents) return;
+
+        const [currentActiveTab] = await chromeApi.tabs.query({ windowId, active: true });
+        if (!currentActiveTab) return;
+
+        await collapseAllGroupsExcept(
+            windowId,
+            currentActiveTab.groupId ?? none,
+        );
+    }
+
+    function scheduleFocusState(windowId) {
+        if (windowId == null || windowId < 0) return Promise.resolve();
+        if (!settingsState.getRuntime().collapseOtherGroupsOnNavEvents) {
+            return Promise.resolve();
+        }
+
+        const existingScheduler = focusSchedulersByWindow.get(windowId);
+        if (existingScheduler) {
+            existingScheduler.pending = true;
+            return existingScheduler.promise;
+        }
+
+        const scheduler = {
+            pending: true,
+            promise: null,
+        };
+        focusSchedulersByWindow.set(windowId, scheduler);
+
+        scheduler.promise = (async () => {
+            try {
+                while (scheduler.pending) {
+                    await chromeGroups.waitForMutationUnlock();
+                    // Requests that arrived while waiting are represented by this run.
+                    scheduler.pending = false;
+                    await applyCurrentFocusState(windowId);
+                }
+            } finally {
+                if (focusSchedulersByWindow.get(windowId) === scheduler) {
+                    focusSchedulersByWindow.delete(windowId);
+                }
+            }
+        })();
+
+        return scheduler.promise;
     }
 
     async function forceReevaluateAllWindows() {
@@ -342,12 +359,11 @@ export function createTabController({ chromeApi, settingsState, chromeGroups }) 
                 windowId,
                 runtime.keepManagedGroupsAtFront,
             );
-            let restoredActiveTab = null;
             if (originalActiveTabId != null) {
                 try {
                     const originalActiveTab = await chromeApi.tabs.get(originalActiveTabId);
                     if (originalActiveTab?.windowId === windowId) {
-                        restoredActiveTab = await chromeApi.tabs.update(
+                        await chromeApi.tabs.update(
                             originalActiveTabId,
                             { active: true },
                         );
@@ -355,20 +371,7 @@ export function createTabController({ chromeApi, settingsState, chromeGroups }) 
                 } catch {}
             }
 
-            runtime = settingsState.getRuntime();
-            if (runtime.collapseOtherGroupsOnNavEvents) {
-                let activeTabForCollapse = restoredActiveTab;
-                if (!activeTabForCollapse) {
-                    [activeTabForCollapse] = await chromeApi.tabs.query({
-                        windowId,
-                        active: true,
-                    });
-                }
-                await collapseAllGroupsExcept(
-                    windowId,
-                    activeTabForCollapse?.groupId ?? none,
-                );
-            }
+            await scheduleFocusState(windowId);
         }
     }
 
@@ -405,11 +408,7 @@ export function createTabController({ chromeApi, settingsState, chromeGroups }) 
 
             await maybeGroupTab(tab, grouping);
 
-            if (settingsState.getRuntime().collapseOtherGroupsOnNavEvents) {
-                // Re-fetch the tab so we know its current groupId after grouping logic.
-                const refreshed = await chromeApi.tabs.get(tab.id);
-                await collapseAllGroupsExcept(refreshed.windowId, refreshed.groupId);
-            }
+            await scheduleFocusState(tab.windowId);
         } catch {}
     }
 
@@ -470,18 +469,14 @@ export function createTabController({ chromeApi, settingsState, chromeGroups }) 
                 settingsState.getRuntime().ungroupSingletonManagedGroups,
             );
 
-            if (settingsState.getRuntime().collapseOtherGroupsOnNavEvents) {
-                const refreshed = await chromeApi.tabs.get(tabId);
-                await collapseAllGroupsExcept(refreshed.windowId, refreshed.groupId);
-            }
+            await scheduleFocusState(tab.windowId);
         } catch {}
     }
 
     async function handleTabActivated(activeInfo) {
         try {
             await settingsState.awaitReady();
-            if (chromeGroups.underMutationLock()) return;
-            await handleActivation(activeInfo.tabId, activeInfo.windowId);
+            await scheduleFocusState(activeInfo?.windowId);
         } catch {}
     }
 
@@ -507,12 +502,7 @@ export function createTabController({ chromeApi, settingsState, chromeGroups }) 
         try {
             await settingsState.awaitReady();
             if (windowId == null || windowId < 0) return;
-            if (chromeGroups.underMutationLock()) return;
-
-            const [activeTab] = await chromeApi.tabs.query({ windowId, active: true });
-            if (!activeTab) return;
-
-            await handleActivation(activeTab.id, windowId);
+            await scheduleFocusState(windowId);
         } catch {}
     }
 
