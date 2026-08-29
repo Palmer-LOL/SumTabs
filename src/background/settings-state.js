@@ -1,4 +1,7 @@
-import { buildCustomBundleMaps } from "../core/grouping.js";
+import {
+    buildCustomBundleMaps,
+    resolveGroupingForHostname,
+} from "../core/grouping.js";
 
 const VALID_GROUP_COLORS = [
     "grey",
@@ -12,23 +15,6 @@ const VALID_GROUP_COLORS = [
     "orange",
 ];
 const IGNORED_HOSTNAMES_STORAGE_LOCK = "sumtabs:ignored-hostnames-storage";
-
-function cloneBundleRuleMap(source) {
-    return new Map([...source.entries()].map(([hostname, entries]) => [
-        hostname,
-        entries.map((entry) => ({
-            ...entry,
-            rule: { ...entry.rule },
-        })),
-    ]));
-}
-
-function cloneBundleMaps(source) {
-    return {
-        exactHostnameToBundleRules: cloneBundleRuleMap(source.exactHostnameToBundleRules),
-        rootDomainToBundleRules: cloneBundleRuleMap(source.rootDomainToBundleRules),
-    };
-}
 
 export function createSettingsState({ chromeApi, navigatorRef, defaults }) {
     let settings = structuredClone(defaults);
@@ -49,6 +35,14 @@ export function createSettingsState({ chromeApi, navigatorRef, defaults }) {
         rootDomainToBundleRules: new Map(),
     };
     let customIdentityToColor = new Map();
+    let runtimeSnapshot = Object.freeze({
+        autoGroupPrefix,
+        minTabsToGroup,
+        collapseOtherGroupsOnNavEvents,
+        keepManagedGroupsAtFront,
+        ungroupSingletonManagedGroups,
+        ignoreInitialTabUrl,
+    });
     let settingsReady = Promise.resolve();
     let ignoredHostnameUpdateQueue = Promise.resolve();
     const ignoredHostnameChangeWaiters = [];
@@ -91,6 +85,15 @@ export function createSettingsState({ chromeApi, navigatorRef, defaults }) {
             const color = String(group?.color ?? "").trim().toLowerCase();
             if (VALID_GROUP_COLORS.includes(color)) customIdentityToColor.set(identity, color);
         }
+
+        runtimeSnapshot = Object.freeze({
+            autoGroupPrefix,
+            minTabsToGroup,
+            collapseOtherGroupsOnNavEvents,
+            keepManagedGroupsAtFront,
+            ungroupSingletonManagedGroups,
+            ignoreInitialTabUrl,
+        });
     }
 
     async function loadSettings() {
@@ -112,19 +115,25 @@ export function createSettingsState({ chromeApi, navigatorRef, defaults }) {
     }
 
     function getRuntime() {
-        return {
-            commonMultipartSuffixes: new Set(commonMultipartSuffixes),
-            excludedFromRootCollapse: new Set(excludedFromRootCollapse),
-            ignoredHostnames: new Set(ignoredHostnames),
-            autoGroupPrefix,
-            minTabsToGroup,
-            collapseOtherGroupsOnNavEvents,
-            keepManagedGroupsAtFront,
-            ungroupSingletonManagedGroups,
-            ignoreInitialTabUrl,
-            customBundleMaps: cloneBundleMaps(customBundleMaps),
-            customIdentityToColor: new Map(customIdentityToColor),
-        };
+        return runtimeSnapshot;
+    }
+
+    function resolveGroupingForUrl(parsedUrl) {
+        return resolveGroupingForHostname({
+            url: parsedUrl?.href,
+            hostname: parsedUrl?.hostname,
+            pathname: parsedUrl?.pathname,
+            parsedUrl,
+            commonMultipartSuffixes,
+            excludedFromRootCollapse,
+            ignoredHostnames,
+            customBundleMaps,
+            managedPrefix: autoGroupPrefix,
+        });
+    }
+
+    function getCustomIdentityColor(identity) {
+        return customIdentityToColor.get(identity);
     }
 
     function ignoredHostnamesSignature(values) {
@@ -223,6 +232,8 @@ export function createSettingsState({ chromeApi, navigatorRef, defaults }) {
         awaitReady,
         reload,
         getRuntime,
+        resolveGroupingForUrl,
+        getCustomIdentityColor,
         handleStorageChange,
         enqueueIgnoredHostnameUpdate,
         updateIgnoredHostnameWithLock,

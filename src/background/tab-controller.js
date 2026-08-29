@@ -1,4 +1,3 @@
-import { resolveGroupingForHostname } from "../core/grouping.js";
 import { isWebUrl, safeParseUrl } from "../core/urls.js";
 
 const TAB_DEBOUNCE_MS = 750;
@@ -44,18 +43,7 @@ export function createTabController({ chromeApi, settingsState, chromeGroups }) 
     }
 
     function getGroupingForUrl(parsedUrl) {
-        const runtime = settingsState.getRuntime();
-        // Shared precedence lives in grouping.js: exact custom bundles first, then inherited root-domain bundles, then default separation rules.
-        return resolveGroupingForHostname({
-            url: parsedUrl.href,
-            hostname: parsedUrl.hostname,
-            pathname: parsedUrl.pathname,
-            commonMultipartSuffixes: runtime.commonMultipartSuffixes,
-            excludedFromRootCollapse: runtime.excludedFromRootCollapse,
-            ignoredHostnames: runtime.ignoredHostnames,
-            customBundleMaps: runtime.customBundleMaps,
-            managedPrefix: runtime.autoGroupPrefix,
-        });
+        return settingsState.resolveGroupingForUrl(parsedUrl);
     }
 
     function resolveTabGrouping(tab, changeInfo) {
@@ -194,7 +182,7 @@ export function createTabController({ chromeApi, settingsState, chromeGroups }) 
             groupIdentity,
             { fresh: true },
         );
-        const desiredColor = settingsState.getRuntime().customIdentityToColor.get(groupIdentity);
+        const desiredColor = settingsState.getCustomIdentityColor(groupIdentity);
 
         if (existingGroupId != null) {
             const [currentTab] = await revalidateEligibleMatchingTabs(
