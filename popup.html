@@ -93,6 +93,48 @@
 
 					<div
 						class="popup__status-row popup__toggle-row"
+						id="ignoreActionRow"
+					>
+						<label
+							class="popup__toggle-heading"
+							for="ignoreActionToggle"
+						>
+							<div
+								class="popup__status-value"
+								id="ignoreActionLabel"
+							>
+								Ignore this hostname
+							</div>
+							<span class="toggle-switch">
+								<input
+									class="toggle-switch__input"
+									id="ignoreActionToggle"
+									type="checkbox"
+									aria-labelledby="ignoreActionLabel"
+									aria-describedby="ignoreActionStatus"
+								/>
+								<span
+									class="toggle-switch__track"
+									aria-hidden="true"
+								></span>
+							</span>
+						</label>
+						<div
+							class="settings__small-text"
+							id="ignoreActionStatus"
+						></div>
+						<button
+							class="popup__rule-action-proxy"
+							id="toggleIgnoreAction"
+							type="button"
+							hidden
+						>
+							Add rule
+						</button>
+					</div>
+
+					<div
+						class="popup__status-row popup__toggle-row"
 						id="exactActionRow"
 					>
 						<label

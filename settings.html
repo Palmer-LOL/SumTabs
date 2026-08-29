@@ -244,6 +244,31 @@
 						class="disclosure-card__content settings__section-content"
 					>
 						<div class="settings__row">
+							<label class="settings__field-label" for="ignoredHostnames"
+								>Ignore these specific hostnames</label
+							>
+							<textarea
+								class="textarea"
+								id="ignoredHostnames"
+								aria-describedby="ignoredHostnamesHelp ignoredHostnamesValidation"
+								spellcheck="false"
+							></textarea>
+							<div class="settings__help-text" id="ignoredHostnamesHelp">
+								Enter one exact hostname per line. Rules do not inherit to
+								subdomains, override bundles and separation rules, and keep
+								matching tabs unmanaged.
+							</div>
+							<div class="validation-message" id="ignoredHostnamesValidation" role="status"></div>
+							<div id="ignoredHostnamesConflict" class="settings__conflict-notice" role="alert" hidden>
+								<p>The stored ignore list changed while you were editing. Choose which value to use before saving.</p>
+								<div class="settings__button-row">
+									<button class="button" id="useStoredIgnoredHostnames" type="button">Use current stored value</button>
+									<button class="button" id="keepDraftIgnoredHostnames" type="button">Keep my draft</button>
+								</div>
+							</div>
+						</div>
+
+						<div class="settings__row">
 							<label
 								class="settings__field-label"
 								for="commonMultipartSuffixes"
@@ -514,45 +539,54 @@
 							<label class="settings__field-label checkbox-field">
 								<input
 									class="checkbox-field__input"
-									id="ignoreInitialTabUrlForGrouping"
+									id="ignoreInitialTabUrl"
 									type="checkbox"
-									aria-describedby="ignoreInitialGroupingHelp"
+									aria-describedby="ignoreInitialTabUrlHelp"
 								/>
 								<span
-									>Ignore a tab’s initial URL when deciding
-									its group</span
+									>Ignore a tab’s initial URL while grouping
+									and enforcing placement</span
 								>
 							</label>
 							<div
 								class="settings__help-text"
-								id="ignoreInitialGroupingHelp"
+								id="ignoreInitialTabUrlHelp"
 							>
 								Wait for a newly created tab to navigate away
 								from temporary pages such as the new-tab page
-								before assigning it to a group.
+								before assigning it to or enforcing its group.
 							</div>
 						</div>
-
-						<div class="settings__row settings__choice-row">
-							<label class="settings__field-label checkbox-field">
-								<input
-									class="checkbox-field__input"
-									id="ignoreInitialTabUrlForEnforcement"
-									type="checkbox"
-									aria-describedby="ignoreInitialEnforcementHelp"
-								/>
-								<span
-									>Ignore a tab’s initial URL when enforcing
-									group placement</span
-								>
-							</label>
-							<div
-								class="settings__help-text"
-								id="ignoreInitialEnforcementHelp"
-							>
-								Avoid moving a newly created tab until its
-								destination URL is available.
+						<div class="settings__row">
+							<div class="settings__field-label">Backup and restore</div>
+							<div class="settings__help-text">
+								Export synchronized settings to a JSON file, or import a
+								previous SumTabs backup. Appearance is stored separately and
+								is not included.
 							</div>
+							<div class="settings__button-row">
+								<button class="button" id="exportSettings" type="button">
+									Export settings
+								</button>
+								<button class="button" id="importSettings" type="button">
+									Import settings
+								</button>
+								<input id="importSettingsFile" type="file" accept="application/json,.json" hidden />
+							</div>
+						</div>
+						<div class="settings__row">
+							<div class="settings__field-label">Restore defaults</div>
+							<div class="settings__help-text">
+								Load every default setting into the editor. Nothing changes
+								until you select Save changes.
+							</div>
+							<button
+								class="button button--danger-secondary"
+								id="reset"
+								type="button"
+							>
+								Load default settings
+							</button>
 						</div>
 					</div>
 				</details>
@@ -619,11 +653,11 @@
 				</button>
 				<div class="settings__action-buttons">
 					<button
-						class="button button--danger-secondary"
-						id="reset"
+						class="button"
+						id="discard"
 						type="button"
 					>
-						Reset to defaults
+						Discard changes
 					</button>
 					<button
 						class="button button--primary"

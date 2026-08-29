@@ -61,6 +61,11 @@ function bindRuleToggle({ toggleId, proxyButtonId }) {
 }
 
 bindRuleToggle({
+	toggleId: "ignoreActionToggle",
+	proxyButtonId: "toggleIgnoreAction",
+});
+
+bindRuleToggle({
 	toggleId: "exactActionToggle",
 	proxyButtonId: "toggleExactAction",
 });

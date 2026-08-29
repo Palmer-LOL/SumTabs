@@ -40,6 +40,10 @@ The extension runs entirely in the browser — no network calls, no analytics �
 - **Exact-host separation rules.**  
   Keep specific hostnames (e.g. `docs.google.com`) separate from their broader domain grouping.
 
+- **Ignored hostnames.**
+  Keep exact hostnames completely unmanaged. Matching is case-normalized but does not inherit from a parent to its subdomains or from a subdomain to its parent. Ignore rules have absolute precedence over custom bundles (including path-scoped rules), exact-host separation, domain-wide separation, and normal root-domain grouping. This functional setting is saved in `chrome.storage.sync`.
+  The popup includes an active-site toggle for adding or removing the current hostname from this list without opening Settings.
+
 - **Advanced JSON editing.**  
   A collapsible section in the settings page allows direct editing of the custom bundle configuration in JSON format.
 
@@ -84,10 +88,12 @@ To configure behavior:
 - Toggle **Collapse other groups when navigating/creating tabs** to enable or disable focus mode.
 - Set **Group when at least this many matching tabs exist** to control when grouping starts (minimum `2`, default `2`).
 - Toggle **Ungroup managed groups when only one tab remains** to remove singleton managed groups automatically (default is off, so singleton managed groups remain grouped).
-- Toggle **Ignore initial tab URL for grouping** and **Ignore initial tab URL for enforcement** to avoid grouping while tabs are still on their initial load.
+- Toggle **Ignore a tab’s initial URL while grouping and enforcing placement** to prevent SumTabs from grouping, reassigning, or enforcing placement for a newly created tab while it remains on the HTTP(S) URL with which it was created. The tab can remain in an existing group during this exemption unless its hostname is listed under **Ignore these specific hostnames**; that rule takes precedence and removes the tab from a managed group. Tabs created on non-HTTP(S) pages can be grouped as soon as they navigate to HTTP(S).
 - Add entries under **Domain-wide subdomain separation rules** (one per line) to keep matching subdomain families separate when needed.
 - Add **Exact-host separation rules** (one per line) to keep specific hosts separate from their broader domain grouping.
+- Add hostnames under **Ignore these specific hostnames** (one per line), then select **Save changes**, to keep exact matches unmanaged. Reset loads the empty default into the editor; save to persist it.
 - Use the **Custom domain bundles** editor to create/manage domain groupings and optionally choose a bundle color.
+- Under **Advanced behavior**, use **Export settings** to download a JSON backup of synchronized settings and **Import settings** to restore one later. The device-local appearance preference is not included.
 
 ---
 
@@ -113,6 +119,12 @@ To configure behavior:
 ## Browser Compatibility
 
 SumTabs targets Chromium-based browsers that support the Tab Groups API (e.g. Chrome, Brave, Edge). Firefox does not currently support this API.
+
+### Known limitation: tab changes during forced reevaluation
+
+SumTabs preserves the tab that was active when forced reevaluation began. If the user changes tabs while reevaluation is still running, SumTabs may restore the earlier tab when processing completes. Chromium does not currently expose enough activation-origin information for SumTabs to distinguish that user selection reliably from grouping-induced or extension-induced activation.
+
+This race condition is intentionally accepted because avoiding it with heuristic event tracking could make active-tab preservation less reliable. See [issue #98](https://github.com/Palmer-LOL/SumTabs/issues/98) for the technical rationale and conditions for revisiting the decision.
 
 ---
 
@@ -197,7 +209,7 @@ The Playwright smoke suite covers only a small number of real Chromium integrati
 - A pinned matching tab remains pinned and outside tab groups while unpinned matching tabs group.
 - A user-created, non-prefixed tab group remains protected during an explicit reevaluation.
 - The popup page can be loaded directly by extension URL and its core controls/modules are present.
-- The settings page can save the grouping threshold through the real UI and persist it to `chrome.storage.sync`.
+- The settings page can save the grouping threshold and canonical ignored-hostname rules through the real UI, persist them to `chrome.storage.sync`, and reload them.
 
 The Playwright tests use a loopback HTTP server and isolated browser profiles. They do not depend on public websites or a developer's normal browser profile.
 

@@ -11,6 +11,7 @@ import {
     normalizeStoredGroups,
     parseDomainsTextarea,
     parseHostnameRulesTextarea,
+    validateImportedSettings,
 } from "./settings-validation.js";
 
 const $ = (id) => document.getElementById(id);
@@ -21,6 +22,63 @@ let savedSnapshot = "";
 let jsonDraftDirty = false;
 let pendingDeletion = null;
 let loading = true;
+let savingIgnoredHostnamesValue = null;
+let ignoredHostnamesBaseline = "";
+let ignoredHostnamesConflict = null;
+const IGNORED_HOSTNAMES_STORAGE_LOCK = "sumtabs:ignored-hostnames-storage";
+const SETTINGS_BACKUP_FORMAT = "sumtabs-settings";
+const SETTINGS_BACKUP_VERSION = 1;
+
+function storedIgnoredHostnamesText(settings) {
+    return arrayToLines(settings.ignoredHostnames ?? DEFAULTS.ignoredHostnames);
+}
+
+function updateIgnoredHostnamesSnapshot(value) {
+    if (!savedSnapshot) return;
+    const snapshot = JSON.parse(savedSnapshot);
+    snapshot.ignoredHostnames = value;
+    savedSnapshot = JSON.stringify(snapshot);
+}
+
+function clearIgnoredHostnamesConflict() {
+    ignoredHostnamesConflict = null;
+    $("ignoredHostnamesConflict").hidden = true;
+}
+
+function acceptIgnoredHostnamesBaseline(value, { updateEditor = false } = {}) {
+    ignoredHostnamesBaseline = value;
+    updateIgnoredHostnamesSnapshot(value);
+    if (updateEditor) $("ignoredHostnames").value = value;
+    clearIgnoredHostnamesConflict();
+}
+
+function showIgnoredHostnamesConflict(storedValue) {
+    ignoredHostnamesConflict = { storedValue };
+    $("ignoredHostnamesConflict").hidden = false;
+    updateSaveState({
+        message: "Resolve the ignored-hostname conflict before saving.",
+        state: "error",
+    });
+}
+
+function handleExternalIgnoredHostnames(value) {
+    const incomingValue = arrayToLines(value ?? DEFAULTS.ignoredHostnames);
+    const localValue = $("ignoredHostnames").value;
+
+    if (localValue === ignoredHostnamesBaseline) {
+        acceptIgnoredHostnamesBaseline(incomingValue, { updateEditor: true });
+    } else if (incomingValue === localValue) {
+        acceptIgnoredHostnamesBaseline(incomingValue);
+    } else if (incomingValue !== ignoredHostnamesBaseline) {
+        showIgnoredHostnamesConflict(incomingValue);
+        return;
+    } else {
+        // The stored value returned to the baseline, so any conflict raised for
+        // an intermediate external value is no longer relevant.
+        clearIgnoredHostnamesConflict();
+    }
+    updateSaveState();
+}
 function setValidationMessage(element, message = "", state = "") {
     if (!element) return;
     element.textContent = message;
@@ -70,6 +128,7 @@ function validateSettings() {
     for (const config of [
         { fieldId: "commonMultipartSuffixes", validationId: "commonMultipartSuffixesValidation" },
         { fieldId: "excludedFromRootCollapse", validationId: "excludedFromRootCollapseValidation" },
+        { fieldId: "ignoredHostnames", validationId: "ignoredHostnamesValidation" },
     ]) {
         const field = $(config.fieldId);
         const parsed = parseHostnameRulesTextarea(field.value);
@@ -141,10 +200,10 @@ function captureUiSnapshot() {
         collapseOtherGroupsOnNavEvents: $("collapseOtherGroupsOnNavEvents").checked,
         keepManagedGroupsAtFront: $("keepManagedGroupsAtFront").checked,
         ungroupSingletonManagedGroups: $("ungroupSingletonManagedGroups").checked,
-        ignoreInitialTabUrlForGrouping: $("ignoreInitialTabUrlForGrouping").checked,
-        ignoreInitialTabUrlForEnforcement: $("ignoreInitialTabUrlForEnforcement").checked,
+        ignoreInitialTabUrl: $("ignoreInitialTabUrl").checked,
         commonMultipartSuffixes: $("commonMultipartSuffixes").value,
         excludedFromRootCollapse: $("excludedFromRootCollapse").value,
+        ignoredHostnames: $("ignoredHostnames").value,
         customDomainGroups: customGroupsState.map((group) => ({
             title: String(group?.title ?? ""),
             domainsText: String(group?.domainsText ?? ""),
@@ -168,7 +227,7 @@ function updateSaveState(customMessage = null) {
 
     const errors = validateSettings();
     const dirty = hasUnsavedChanges();
-    const saveBlocked = errors.length > 0 || jsonDraftDirty;
+    const saveBlocked = errors.length > 0 || jsonDraftDirty || !!ignoredHostnamesConflict;
     $("save").disabled = !dirty || saveBlocked;
 
     if (customMessage) {
@@ -177,6 +236,8 @@ function updateSaveState(customMessage = null) {
         setStatus(`${errors.length} ${errors.length === 1 ? "issue needs" : "issues need"} attention before saving.`, "error");
     } else if (jsonDraftDirty) {
         setStatus("Raw JSON has unapplied changes.", "warning");
+    } else if (ignoredHostnamesConflict) {
+        setStatus("Resolve the ignored-hostname conflict before saving.", "error");
     } else if (dirty) {
         setStatus("Unsaved changes.", "warning");
     } else {
@@ -352,10 +413,11 @@ function populateForm(settings) {
     $("collapseOtherGroupsOnNavEvents").checked = !!settings.collapseOtherGroupsOnNavEvents;
     $("keepManagedGroupsAtFront").checked = !!settings.keepManagedGroupsAtFront;
     $("ungroupSingletonManagedGroups").checked = !!settings.ungroupSingletonManagedGroups;
-    $("ignoreInitialTabUrlForGrouping").checked = !!settings.ignoreInitialTabUrlForGrouping;
-    $("ignoreInitialTabUrlForEnforcement").checked = !!settings.ignoreInitialTabUrlForEnforcement;
+    $("ignoreInitialTabUrl").checked = !!settings.ignoreInitialTabUrlForGrouping
+        && !!settings.ignoreInitialTabUrlForEnforcement;
     $("commonMultipartSuffixes").value = arrayToLines(settings.commonMultipartSuffixes ?? DEFAULTS.commonMultipartSuffixes);
     $("excludedFromRootCollapse").value = arrayToLines(settings.excludedFromRootCollapse ?? DEFAULTS.excludedFromRootCollapse);
+    $("ignoredHostnames").value = arrayToLines(settings.ignoredHostnames ?? DEFAULTS.ignoredHostnames);
 
     jsonDraftDirty = false;
     pendingDeletion = null;
@@ -369,6 +431,8 @@ async function load() {
     const stored = await chrome.storage.sync.get(DEFAULTS);
     populateForm(stored);
     savedSnapshot = captureUiSnapshot();
+    ignoredHostnamesBaseline = storedIgnoredHostnamesText(stored);
+    clearIgnoredHostnamesConflict();
     loading = false;
     updateSaveState();
 }
@@ -376,36 +440,87 @@ async function load() {
 async function save() {
     updateSelectedGroupFromInputs();
     const errors = validateSettings();
-    if (errors.length || jsonDraftDirty) {
+    if (errors.length || jsonDraftDirty || ignoredHostnamesConflict) {
         updateSaveState();
         return;
     }
 
     const commonMultipartSuffixes = parseHostnameRulesTextarea($("commonMultipartSuffixes").value);
     const excludedFromRootCollapse = parseHostnameRulesTextarea($("excludedFromRootCollapse").value);
-    const payload = {
+    const ignoredHostnames = parseHostnameRulesTextarea($("ignoredHostnames").value);
+    const editorValues = {
         minTabsToGroup: Number($("minTabsToGroup").value),
         collapseOtherGroupsOnNavEvents: $("collapseOtherGroupsOnNavEvents").checked,
         keepManagedGroupsAtFront: $("keepManagedGroupsAtFront").checked,
         ungroupSingletonManagedGroups: $("ungroupSingletonManagedGroups").checked,
-        ignoreInitialTabUrlForGrouping: $("ignoreInitialTabUrlForGrouping").checked,
-        ignoreInitialTabUrlForEnforcement: $("ignoreInitialTabUrlForEnforcement").checked,
+        // Keep the legacy storage keys aligned for backward compatibility.
+        ignoreInitialTabUrlForGrouping: $("ignoreInitialTabUrl").checked,
+        ignoreInitialTabUrlForEnforcement: $("ignoreInitialTabUrl").checked,
         commonMultipartSuffixes: commonMultipartSuffixes.validHostnames,
         excludedFromRootCollapse: excludedFromRootCollapse.validHostnames,
+        ignoredHostnames: ignoredHostnames.validHostnames,
         customDomainGroups: buildGroupsForPersistence(customGroupsState),
     };
 
+    const localIgnoredHostnames = arrayToLines(ignoredHostnames.validHostnames);
     $("save").disabled = true;
     setStatus("Saving…", "neutral");
 
     try {
-        await chrome.storage.sync.set(payload);
-        populateForm(payload);
+        const savedSettings = await navigator.locks.request(IGNORED_HOSTNAMES_STORAGE_LOCK, async () => {
+            // Keep the conflict check and write in one critical section shared
+            // with the popup so its quick action cannot land between them.
+            const latest = await chrome.storage.sync.get(DEFAULTS);
+            const latestIgnoredHostnames = storedIgnoredHostnamesText(latest);
+            if (latestIgnoredHostnames !== ignoredHostnamesBaseline) {
+                if ($("ignoredHostnames").value === ignoredHostnamesBaseline) {
+                    acceptIgnoredHostnamesBaseline(latestIgnoredHostnames, { updateEditor: true });
+                } else if (latestIgnoredHostnames === localIgnoredHostnames) {
+                    acceptIgnoredHostnamesBaseline(latestIgnoredHostnames);
+                } else {
+                    showIgnoredHostnamesConflict(latestIgnoredHostnames);
+                    return null;
+                }
+            }
+
+            const baseline = JSON.parse(savedSnapshot);
+            const current = JSON.parse(captureUiSnapshot());
+            const payload = {};
+            const copyIfChanged = (uiKey, ...storageKeys) => {
+                if (JSON.stringify(current[uiKey]) === JSON.stringify(baseline[uiKey])) return;
+                for (const storageKey of storageKeys) payload[storageKey] = editorValues[storageKey];
+            };
+            copyIfChanged("minTabsToGroup", "minTabsToGroup");
+            copyIfChanged("collapseOtherGroupsOnNavEvents", "collapseOtherGroupsOnNavEvents");
+            copyIfChanged("keepManagedGroupsAtFront", "keepManagedGroupsAtFront");
+            copyIfChanged("ungroupSingletonManagedGroups", "ungroupSingletonManagedGroups");
+            // Always align both legacy keys with the combined control. Older
+            // synced versions read these independently, and may have left them
+            // divergent even when this page's combined value is unchanged.
+            payload.ignoreInitialTabUrlForGrouping = editorValues.ignoreInitialTabUrlForGrouping;
+            payload.ignoreInitialTabUrlForEnforcement = editorValues.ignoreInitialTabUrlForEnforcement;
+            copyIfChanged("commonMultipartSuffixes", "commonMultipartSuffixes");
+            copyIfChanged("excludedFromRootCollapse", "excludedFromRootCollapse");
+            copyIfChanged("ignoredHostnames", "ignoredHostnames");
+            copyIfChanged("customDomainGroups", "customDomainGroups");
+
+            savingIgnoredHostnamesValue = Object.hasOwn(payload, "ignoredHostnames")
+                ? arrayToLines(payload.ignoredHostnames)
+                : null;
+            await chrome.storage.sync.set(payload);
+            return { ...latest, ...payload };
+        });
+        if (!savedSettings) return;
+        populateForm(savedSettings);
         savedSnapshot = captureUiSnapshot();
+        ignoredHostnamesBaseline = storedIgnoredHostnamesText(savedSettings);
+        clearIgnoredHostnamesConflict();
         updateSaveState({ message: "Changes saved.", state: "valid" });
     } catch (error) {
         console.error("Failed to save SumTabs settings", error);
         updateSaveState({ message: "Could not save changes. Try again.", state: "error" });
+    } finally {
+        savingIgnoredHostnamesValue = null;
     }
 }
 
@@ -415,8 +530,75 @@ function loadDefaultsIntoEditor() {
     );
     if (!confirmed) return;
 
+    if (ignoredHostnamesConflict) {
+        acceptIgnoredHostnamesBaseline(ignoredHostnamesConflict.storedValue);
+    } else {
+        clearIgnoredHostnamesConflict();
+    }
     populateForm(DEFAULTS);
     updateSaveState({ message: "Defaults loaded. Save changes to apply them.", state: "warning" });
+}
+
+async function discardChanges() {
+    const stored = await chrome.storage.sync.get(DEFAULTS);
+    populateForm(stored);
+    savedSnapshot = captureUiSnapshot();
+    ignoredHostnamesBaseline = storedIgnoredHostnamesText(stored);
+    clearIgnoredHostnamesConflict();
+    updateSaveState({ message: "Unsaved changes discarded.", state: "neutral" });
+}
+
+async function exportSettings() {
+    const stored = await chrome.storage.sync.get(null);
+    const backup = {
+        format: SETTINGS_BACKUP_FORMAT,
+        version: SETTINGS_BACKUP_VERSION,
+        settings: { ...structuredClone(DEFAULTS), ...stored },
+    };
+    const blob = new Blob([`${JSON.stringify(backup, null, 2)}\n`], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `sumtabs-settings-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+    updateSaveState({ message: "Settings exported.", state: "valid" });
+}
+
+async function importSettingsFile(file) {
+    let backup;
+    try {
+        backup = JSON.parse(await file.text());
+    } catch {
+        throw new Error("The selected file is not valid JSON.");
+    }
+
+    if (backup?.format !== SETTINGS_BACKUP_FORMAT
+        || backup?.version !== SETTINGS_BACKUP_VERSION
+        || !backup.settings
+        || typeof backup.settings !== "object"
+        || Array.isArray(backup.settings)) {
+        throw new Error("The selected file is not a supported SumTabs settings backup.");
+    }
+    const importedSettings = validateImportedSettings(backup.settings, DEFAULTS.autoGroupPrefix);
+    if (!window.confirm(
+        "Import these settings now?\n\nMatching synchronized settings will be overwritten. Settings not included in the backup will be retained."
+    )) return;
+
+    loading = true;
+    try {
+        await navigator.locks.request(IGNORED_HOSTNAMES_STORAGE_LOCK, () => (
+            chrome.storage.sync.set(importedSettings)
+        ));
+        const stored = await chrome.storage.sync.get(DEFAULTS);
+        populateForm(stored);
+        savedSnapshot = captureUiSnapshot();
+        ignoredHostnamesBaseline = storedIgnoredHostnamesText(stored);
+        clearIgnoredHostnamesConflict();
+    } finally {
+        loading = false;
+    }
+    updateSaveState({ message: "Settings imported.", state: "valid" });
 }
 
 function bindEvents() {
@@ -425,10 +607,10 @@ function bindEvents() {
         "collapseOtherGroupsOnNavEvents",
         "keepManagedGroupsAtFront",
         "ungroupSingletonManagedGroups",
-        "ignoreInitialTabUrlForGrouping",
-        "ignoreInitialTabUrlForEnforcement",
+        "ignoreInitialTabUrl",
         "commonMultipartSuffixes",
         "excludedFromRootCollapse",
+        "ignoredHostnames",
     ];
 
     for (const id of simpleFields) {
@@ -466,7 +648,40 @@ function bindEvents() {
             updateSaveState({ message: "Could not save changes. Try again.", state: "error" });
         });
     });
+    $("discard").addEventListener("click", () => {
+        discardChanges().catch((error) => {
+            console.error("Failed to discard SumTabs settings changes", error);
+            updateSaveState({ message: "Could not reload saved settings. Try again.", state: "error" });
+        });
+    });
     $("reset").addEventListener("click", loadDefaultsIntoEditor);
+    $("exportSettings").addEventListener("click", () => {
+        exportSettings().catch((error) => {
+            console.error("Failed to export SumTabs settings", error);
+            updateSaveState({ message: "Could not export settings. Try again.", state: "error" });
+        });
+    });
+    $("importSettings").addEventListener("click", () => $("importSettingsFile").click());
+    $("importSettingsFile").addEventListener("change", (event) => {
+        const [file] = event.target.files;
+        event.target.value = "";
+        if (!file) return;
+        importSettingsFile(file).catch((error) => {
+            console.error("Failed to import SumTabs settings", error);
+            updateSaveState({ message: error.message || "Could not import settings.", state: "error" });
+        });
+    });
+
+    $("useStoredIgnoredHostnames").addEventListener("click", () => {
+        if (!ignoredHostnamesConflict) return;
+        acceptIgnoredHostnamesBaseline(ignoredHostnamesConflict.storedValue, { updateEditor: true });
+        updateSaveState();
+    });
+    $("keepDraftIgnoredHostnames").addEventListener("click", () => {
+        if (!ignoredHostnamesConflict) return;
+        acceptIgnoredHostnamesBaseline(ignoredHostnamesConflict.storedValue);
+        updateSaveState();
+    });
 
     window.addEventListener("beforeunload", (event) => {
         if (!hasUnsavedChanges() && !jsonDraftDirty) return;
@@ -474,6 +689,13 @@ function bindEvents() {
         event.returnValue = "";
     });
 }
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== "sync" || !changes.ignoredHostnames || loading) return;
+    const incomingValue = arrayToLines(changes.ignoredHostnames.newValue ?? DEFAULTS.ignoredHostnames);
+    if (savingIgnoredHostnamesValue !== null && incomingValue === savingIgnoredHostnamesValue) return;
+    handleExternalIgnoredHostnames(changes.ignoredHostnames.newValue);
+});
 
 bindEvents();
 load().catch((error) => {

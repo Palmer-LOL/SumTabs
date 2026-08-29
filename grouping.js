@@ -311,11 +311,17 @@ export function resolveGroupingForHostname({
     parsedUrl,
     commonMultipartSuffixes,
     excludedFromRootCollapse,
+    ignoredHostnames,
     customBundleMaps,
     managedPrefix,
 }) {
     const normalizedHostname = toLowerString(hostname);
     const prefix = String(managedPrefix ?? "");
+    const ignored = ignoredHostnames instanceof Set
+        ? ignoredHostnames
+        : new Set((ignoredHostnames ?? []).map((value) => toLowerString(value)).filter(Boolean));
+    if (ignored.has(normalizedHostname)) return null;
+
     const { rootDomain, matchedSuffix } = getRootDomain(normalizedHostname, commonMultipartSuffixes);
     let normalizedParsedUrl = parsedUrl instanceof URL ? parsedUrl : null;
     if (!normalizedParsedUrl && typeof url === "string" && url.trim()) {

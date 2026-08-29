@@ -131,6 +131,35 @@ describe("custom bundle maps, ownership, and conflicts", () => {
     });
 });
 
+describe("ignored-hostname grouping precedence", () => {
+    const bundleMaps = buildCustomBundleMaps([
+        { title: "Host bundle", domains: ["docs.example.com"] },
+        { title: "Path bundle", domains: ["docs.example.com/research"] },
+    ]);
+
+    it.each(["docs.example.com", "Docs.Example.COM"])("ignores an exact, case-normalized match for %s", (hostname) => {
+        expect(grouping({ hostname, ignoredHostnames: ["DOCS.EXAMPLE.COM"] })).toBeNull();
+    });
+
+    it("does not inherit ignores between parent domains and subdomains", () => {
+        expect(grouping({ hostname: "example.com", ignoredHostnames: ["docs.example.com"] })).not.toBeNull();
+        expect(grouping({ hostname: "child.docs.example.com", ignoredHostnames: ["docs.example.com"] })).not.toBeNull();
+        expect(grouping({ hostname: "docs.example.com", ignoredHostnames: ["example.com"] })).not.toBeNull();
+    });
+
+    it("takes precedence over default grouping, bundles, path bundles, and both separation rule types", () => {
+        const common = {
+            hostname: "docs.example.com",
+            ignoredHostnames: new Set(["docs.example.com"]),
+            excludedFromRootCollapse: ["docs.example.com"],
+            commonMultipartSuffixes: ["example.com"],
+            customBundleMaps: bundleMaps,
+        };
+        expect(grouping(common)).toBeNull();
+        expect(grouping({ ...common, url: "https://docs.example.com/research/paper" })).toBeNull();
+    });
+});
+
 describe("grouping resolution precedence", () => {
     it("accepts http and https URLs and ignores path/query/fragment for default hostname grouping", () => {
         expect(grouping({ url: "http://docs.google.com/a?x=1#frag", hostname: "docs.google.com" })).toMatchObject({

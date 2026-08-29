@@ -33,6 +33,8 @@ export const DEFAULTS = {
 		// "docs.google.com",
 	],
 
+	ignoredHostnames: [],
+
 	customDomainGroups: [
 		// { title: "Chess", domains: ["chess.com", "chessly.com"], color: "purple" }
 	],

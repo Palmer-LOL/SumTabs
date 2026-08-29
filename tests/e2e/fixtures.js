@@ -134,10 +134,37 @@ export const test = base.extend({
       evaluate: evaluateInWorker,
       resetStorage: () => evaluateInWorker("await callbackify(chrome.storage.sync.clear.bind(chrome.storage.sync)); return true;"),
       getStorage: () => evaluateInWorker("return await callbackify(chrome.storage.sync.get.bind(chrome.storage.sync), null);"),
+      setStorage: (values) => evaluateInWorker(`await callbackify(chrome.storage.sync.set.bind(chrome.storage.sync), ${JSON.stringify(values)}); return true;`),
       forceReevaluate: () => sendExtensionMessage({ type: "sumtabs:force-reevaluate" }),
+      updateIgnoredHostname: (hostname, shouldIgnore) => sendExtensionMessage({
+        type: "sumtabs:update-ignored-hostname",
+        hostname,
+        shouldIgnore,
+      }),
+      forceReevaluateTrackingCreatedTabs: async () => {
+        const page = await openExtensionPage(context, extensionId, "settings.html");
+        try {
+          await evaluateInWorker("globalThis.__sumtabsCreatedTabs = []; globalThis.__sumtabsCreatedTabsListener = (tab) => globalThis.__sumtabsCreatedTabs.push({ id: tab.id, url: tab.pendingUrl || tab.url || '' }); chrome.tabs.onCreated.addListener(globalThis.__sumtabsCreatedTabsListener); return true;");
+          await page.evaluate((payload) => chrome.runtime.sendMessage(payload), { type: "sumtabs:force-reevaluate" });
+          return await evaluateInWorker("return globalThis.__sumtabsCreatedTabs || [];");
+        } finally {
+          await evaluateInWorker("if (globalThis.__sumtabsCreatedTabsListener) chrome.tabs.onCreated.removeListener(globalThis.__sumtabsCreatedTabsListener); delete globalThis.__sumtabsCreatedTabsListener; delete globalThis.__sumtabsCreatedTabs; return true;");
+          await page.close();
+        }
+      },
+      forceReevaluateWithActiveTab: async (url) => {
+        const page = await openExtensionPage(context, extensionId, "settings.html");
+        try {
+          await evaluateInWorker(`const targetUrl = ${JSON.stringify(url)}; const tabs = await callbackify(chrome.tabs.query.bind(chrome.tabs), {}); const tab = tabs.find((candidate) => candidate.url === targetUrl); if (!tab) throw new Error('Tab not found for activation'); await callbackify(chrome.tabs.update.bind(chrome.tabs), tab.id, { active: true }); return true;`);
+          return await page.evaluate((payload) => chrome.runtime.sendMessage(payload), { type: "sumtabs:force-reevaluate" });
+        } finally {
+          await page.close();
+        }
+      },
       tabByUrl: (url) => evaluateInWorker(`const targetUrl = ${JSON.stringify(url)}; const tabs = await callbackify(chrome.tabs.query.bind(chrome.tabs), {}); return tabs.find((tab) => tab.url === targetUrl) || null;`),
       tabsByUrls: (urls) => evaluateInWorker(`const urls = ${JSON.stringify(urls)}; const tabs = await callbackify(chrome.tabs.query.bind(chrome.tabs), {}); return urls.map((url) => tabs.find((tab) => tab.url === url) || null);`),
       groupById: (groupId) => evaluateInWorker(`return await callbackify(chrome.tabGroups.get.bind(chrome.tabGroups), ${JSON.stringify(groupId)});`),
+      setGroupCollapsed: (groupId, collapsed) => evaluateInWorker(`return await callbackify(chrome.tabGroups.update.bind(chrome.tabGroups), ${JSON.stringify(groupId)}, { collapsed: ${JSON.stringify(collapsed)} });`),
       pinTabByUrl: (url) => evaluateInWorker(`const targetUrl = ${JSON.stringify(url)}; const tabs = await callbackify(chrome.tabs.query.bind(chrome.tabs), {}); const tab = tabs.find((candidate) => candidate.url === targetUrl); if (!tab) throw new Error('Tab not found for pinning'); return await callbackify(chrome.tabs.update.bind(chrome.tabs), tab.id, { pinned: true });`),
       createUserGroup: (urls, title) => evaluateInWorker(`const urls = ${JSON.stringify(urls)}; const tabs = await callbackify(chrome.tabs.query.bind(chrome.tabs), {}); const tabIds = []; for (const url of urls) { const tab = tabs.find((candidate) => candidate.url === url); if (!tab) throw new Error('Tab not found for user group: ' + url); tabIds.push(tab.id); } const groupId = await callbackify(chrome.tabs.group.bind(chrome.tabs), { tabIds }); await callbackify(chrome.tabGroups.update.bind(chrome.tabGroups), groupId, { title: ${JSON.stringify(title)} }); return { groupId, tabs: await callbackify(chrome.tabs.query.bind(chrome.tabs), { groupId }) };`),
     };
