@@ -1,4 +1,4 @@
-import { test, expect } from "./fixtures.js";
+import { popupPath, settingsPath, test, expect } from "./fixtures.js";
 import { readFile } from "node:fs/promises";
 
 test.beforeEach(async ({ extensionApi }) => {
@@ -6,7 +6,7 @@ test.beforeEach(async ({ extensionApi }) => {
 });
 
 test("saves grouping threshold through the real settings UI and persists it in sync storage", async ({ extensionPage, extensionApi }) => {
-  const settingsPage = await extensionPage("settings.html");
+  const settingsPage = await extensionPage(settingsPath);
 
   await expect(settingsPage.getByRole("heading", { name: "SumTabs Settings" })).toBeVisible();
   await expect(settingsPage.getByRole("status").filter({ hasText: "No unsaved changes." })).toBeVisible();
@@ -29,7 +29,7 @@ test("saves grouping threshold through the real settings UI and persists it in s
 
 test("discards editor changes without replacing saved settings", async ({ extensionPage, extensionApi }) => {
   await extensionApi.setStorage({ minTabsToGroup: 3 });
-  const settingsPage = await extensionPage("settings.html");
+  const settingsPage = await extensionPage(settingsPath);
   const threshold = settingsPage.getByLabel("Group when at least this many matching tabs exist");
 
   await threshold.fill("4");
@@ -42,7 +42,7 @@ test("discards editor changes without replacing saved settings", async ({ extens
 
 test("exports synchronized settings and imports a backup", async ({ extensionPage, extensionApi }) => {
   await extensionApi.setStorage({ minTabsToGroup: 3, futureSetting: { retained: true } });
-  const settingsPage = await extensionPage("settings.html");
+  const settingsPage = await extensionPage(settingsPath);
   await settingsPage.getByText("Advanced behavior").click();
 
   const downloadPromise = settingsPage.waitForEvent("download");
@@ -81,7 +81,7 @@ test("exports synchronized settings and imports a backup", async ({ extensionPag
 
 test("rejects malformed imported settings before writing to sync storage", async ({ extensionPage, extensionApi }) => {
   await extensionApi.setStorage({ minTabsToGroup: 3, futureSetting: { retained: true } });
-  const settingsPage = await extensionPage("settings.html");
+  const settingsPage = await extensionPage(settingsPath);
   const malformed = {
     format: "sumtabs-settings",
     version: 1,
@@ -112,7 +112,7 @@ test("rejects malformed imported settings before writing to sync storage", async
 
 test("saves and reloads canonical ignored hostnames through sync storage", async ({ extensionPage, extensionApi }) => {
   await extensionApi.setStorage({ futureSetting: { retained: true } });
-  const settingsPage = await extensionPage("settings.html");
+  const settingsPage = await extensionPage(settingsPath);
   await settingsPage.getByText("Site separation rules").click();
 
   const ignored = settingsPage.getByLabel("Ignore these specific hostnames");
@@ -136,7 +136,7 @@ test("uses one initial-URL toggle and keeps both legacy storage keys aligned", a
     ignoreInitialTabUrlForGrouping: true,
     ignoreInitialTabUrlForEnforcement: false,
   });
-  const settingsPage = await extensionPage("settings.html");
+  const settingsPage = await extensionPage(settingsPath);
   await settingsPage.getByText("Advanced behavior").click();
 
   const initialUrlToggle = settingsPage.getByLabel("Ignore a tab’s initial URL while grouping and enforcing placement");
@@ -151,7 +151,7 @@ test("uses one initial-URL toggle and keeps both legacy storage keys aligned", a
 });
 
 test("preserves an unsaved bundle draft while a clean ignore list updates live", async ({ extensionPage, extensionApi }) => {
-  const settingsPage = await extensionPage("settings.html");
+  const settingsPage = await extensionPage(settingsPath);
   await settingsPage.getByText("Custom bundles", { exact: true }).click();
   await settingsPage.getByRole("button", { name: "Create bundle" }).click();
   await settingsPage.getByLabel("Bundle title").fill("Unsaved research");
@@ -173,7 +173,7 @@ test("preserves an unsaved bundle draft while a clean ignore list updates live",
 
 test("requires an explicit choice for simultaneous local and external ignore-list edits", async ({ extensionPage, extensionApi }) => {
   await extensionApi.setStorage({ ignoredHostnames: ["original.example"] });
-  const settingsPage = await extensionPage("settings.html");
+  const settingsPage = await extensionPage(settingsPath);
   await settingsPage.getByText("Site separation rules").click();
   const ignored = settingsPage.getByLabel("Ignore these specific hostnames");
   const save = settingsPage.getByRole("button", { name: "Save changes" });
@@ -209,7 +209,7 @@ test("requires an explicit choice for simultaneous local and external ignore-lis
 
 test("treats loading defaults as an explicit resolution of an ignore-list conflict", async ({ extensionPage, extensionApi }) => {
   await extensionApi.setStorage({ ignoredHostnames: ["original.example"] });
-  const settingsPage = await extensionPage("settings.html");
+  const settingsPage = await extensionPage(settingsPath);
   await settingsPage.getByText("Site separation rules").click();
   await settingsPage.getByLabel("Ignore these specific hostnames").fill("draft.example");
   await extensionApi.setStorage({ ignoredHostnames: ["external.example"] });
@@ -227,8 +227,8 @@ test("treats loading defaults as an explicit resolution of an ignore-list confli
 
 test("coordinates the final conflict check and write with popup ignore updates", async ({ extensionPage, extensionApi }) => {
   await extensionApi.setStorage({ ignoredHostnames: ["original.example"] });
-  const settingsPage = await extensionPage("settings.html");
-  const popupWriter = await extensionPage("settings.html");
+  const settingsPage = await extensionPage(settingsPath);
+  const popupWriter = await extensionPage(settingsPath);
   await settingsPage.getByText("Site separation rules").click();
   await settingsPage.getByLabel("Ignore these specific hostnames").fill("settings-draft.example");
 
@@ -259,11 +259,11 @@ test("keeps a real popup ignore toggle queued after the popup closes", async ({ 
   const targetPage = await context.newPage();
   await targetPage.goto(targetUrl);
 
-  const settingsPage = await extensionPage("settings.html");
+  const settingsPage = await extensionPage(settingsPath);
   await settingsPage.getByText("Site separation rules").click();
   await settingsPage.getByLabel("Ignore these specific hostnames").fill("settings-draft.example");
 
-  const popupPage = await extensionPage("popup.html");
+  const popupPage = await extensionPage(popupPath);
   await extensionApi.evaluate(`
     const targetUrl = ${JSON.stringify(targetUrl)};
     const tabs = await callbackify(chrome.tabs.query.bind(chrome.tabs), {});
