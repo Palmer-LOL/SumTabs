@@ -232,7 +232,7 @@ test("returning to an ignored initial URL removes it and cleans up its managed s
   }).toEqual([noGroupId, noGroupId]);
 });
 
-test("ignored navigation still collapses the remaining managed group", async ({ context, httpServer, extensionApi }) => {
+test("active ignored navigation collapses the remaining managed group", async ({ context, httpServer, extensionApi }) => {
   const groupedUrl = httpServer.url("/collapse-source");
   const companionUrl = httpServer.url("/collapse-companion");
   const ignoredUrl = httpServer.url("/collapse-ignored").replace("127.0.0.1", "localhost");
@@ -249,6 +249,10 @@ test("ignored navigation still collapses the remaining managed group", async ({ 
 
   const sourceGroupId = (await extensionApi.tabByUrl(groupedUrl)).groupId;
   await extensionApi.setGroupCollapsed(sourceGroupId, false);
+  await navigatingPage.bringToFront();
+  await expect.poll(async () => (await extensionApi.tabByUrl(groupedUrl))?.active, {
+    message: "the tab exercising active-navigation focus semantics should be active",
+  }).toBe(true);
   await navigatingPage.waitForTimeout(400);
   await navigatingPage.goto(ignoredUrl);
 
@@ -267,6 +271,50 @@ test("ignored navigation still collapses the remaining managed group", async ({ 
     ignoredGroupId: noGroupId,
     companionGroupId: sourceGroupId,
     collapsed: true,
+  });
+});
+
+test("background ignored navigation keeps the active managed group expanded", async ({ context, httpServer, extensionApi }) => {
+  const backgroundUrl = httpServer.url("/background-collapse-source");
+  const activeUrl = httpServer.url("/background-collapse-companion");
+  const ignoredUrl = httpServer.url("/background-collapse-ignored").replace("127.0.0.1", "localhost");
+  await extensionApi.setStorage({
+    collapseOtherGroupsOnNavEvents: true,
+    ignoredHostnames: ["localhost"],
+    ungroupSingletonManagedGroups: false,
+  });
+
+  const backgroundPage = await openHttpPage(context, backgroundUrl);
+  const activePage = await openHttpPage(context, activeUrl);
+  await extensionApi.forceReevaluate();
+  await expectTabsGrouped(extensionApi, [backgroundUrl, activeUrl]);
+
+  const managedGroupId = (await extensionApi.tabByUrl(activeUrl)).groupId;
+  await extensionApi.setGroupCollapsed(managedGroupId, false);
+  await activePage.bringToFront();
+  await expect.poll(async () => (await extensionApi.tabByUrl(activeUrl))?.active, {
+    message: "the managed companion should be active before the background navigation",
+  }).toBe(true);
+  await backgroundPage.waitForTimeout(400);
+  await backgroundPage.goto(ignoredUrl);
+
+  await expect.poll(async () => {
+    const ignoredTab = await extensionApi.tabByUrl(ignoredUrl);
+    const activeTab = await extensionApi.tabByUrl(activeUrl);
+    const group = activeTab?.groupId === noGroupId
+      ? null
+      : await extensionApi.groupById(activeTab.groupId);
+    return {
+      ignoredGroupId: ignoredTab?.groupId ?? noGroupId,
+      activeGroupId: activeTab?.groupId ?? noGroupId,
+      active: activeTab?.active ?? false,
+      collapsed: group?.collapsed ?? false,
+    };
+  }, { message: "background navigation should not override the active managed-group focus state" }).toEqual({
+    ignoredGroupId: noGroupId,
+    activeGroupId: managedGroupId,
+    active: true,
+    collapsed: false,
   });
 });
 
