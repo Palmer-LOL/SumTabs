@@ -133,7 +133,7 @@ This project is licensed under the **[Do What The Fuck You Want To Public Licens
 Automated testing is split into two deliberately separate layers:
 
 - **Vitest unit tests** cover deterministic JavaScript contracts and repository path integrity without loading a browser.
-- **Playwright smoke tests** load the actual unpacked Manifest V3 extension into bundled Chromium and exercise 27 browser-integration cases involving the background service worker, `chrome.tabs`, `chrome.tabGroups`, `chrome.storage.sync`, and extension pages.
+- **Playwright smoke tests** load the actual unpacked Manifest V3 extension into bundled Chromium and exercise 29 browser-integration cases involving the background service worker, `chrome.tabs`, `chrome.tabGroups`, `chrome.storage.sync`, and extension pages.
 
 The extension itself remains directly loadable as an unpacked Chromium extension. Normal extension use does **not** require npm installation, Node.js, a build step, bundling, or transpilation.
 
@@ -198,10 +198,10 @@ The Vitest suite covers:
 - Background-controller use of a freshly updated grouping threshold and popup window-action stylesheet injection through an injected Chrome API.
 - Extension layout integrity: exact manifest entries and icon maps, manifest-selected resources, page scripts/stylesheets, static imports/re-exports, literal `chrome.runtime.getURL()` resources, local CSS references, the complete approved source tree, and absence of obsolete root runtime paths.
 
-The Playwright suite currently defines 28 cases in three files:
+The Playwright suite currently defines 29 cases in three files:
 
 - **2 extension startup/page cases:** unpacked MV3 startup and service-worker path; direct options-page loading by extension URL; and direct popup loading with its modules, core controls, section order, window summary, canonical close-all action, and no uncaught page errors.
-- **15 grouping cases:** two-tab grouping and the single-tab threshold; pinned-tab protection; user-group protection; ignored-host exclusion; active-tab preservation at first, middle, and last positions; ignored-host acknowledgement after managed-group cleanup while preserving user groups; initial-URL exemption bypass; singleton cleanup on ignored navigation; active and background ignored-navigation focus behavior; focus-mode collapse of managed groups while preserving an active user-created group; regrouping after returning from an ignored hostname; and immediate removal of an ignored tab created inside a managed group.
+- **16 grouping cases:** two-tab grouping and the single-tab threshold; pinned-tab protection; user-group protection; ignored-host exclusion; active-tab preservation at first, middle, and last positions; ignored-host acknowledgement after managed-group cleanup while preserving user groups; initial-URL exemption bypass; singleton cleanup on ignored navigation; active and background ignored-navigation focus behavior; focus-mode collapse of managed groups while preserving an active user-created group; rapid managed-group activation ordering; regrouping after returning from an ignored hostname; and immediate removal of an ignored tab created inside a managed group.
 - **11 settings cases:** threshold save/reload; discard; export/import with unknown-key preservation; malformed-import rejection; ignored-host canonicalization; alignment of both legacy initial-URL keys; unsaved bundle preservation during a live ignore-list update; explicit resolution of ignore-list conflicts (including defaults); settings/popup lock coordination; and completion of a queued popup ignore update after the popup closes.
 
 The Playwright tests use a loopback HTTP server and isolated browser profiles. They do not depend on public websites or a developer's normal browser profile.

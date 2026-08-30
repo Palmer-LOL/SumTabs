@@ -127,6 +127,73 @@ test("focus mode collapses managed groups without changing an active user-create
   });
 });
 
+test("rapid managed-group activations leave the latest selection focused", async ({ context, httpServer, extensionApi }) => {
+  const firstGroupUrls = [
+    httpServer.url("/rapid-focus-first-a"),
+    httpServer.url("/rapid-focus-first-b"),
+  ];
+  const secondGroupUrls = [
+    httpServer.url("/rapid-focus-second-a").replace("127.0.0.1", "localhost"),
+    httpServer.url("/rapid-focus-second-b").replace("127.0.0.1", "localhost"),
+  ];
+
+  await extensionApi.setStorage({ collapseOtherGroupsOnNavEvents: true });
+  let settlingPage = null;
+  for (const url of [...firstGroupUrls, ...secondGroupUrls]) {
+    settlingPage = await openHttpPage(context, url);
+  }
+  await extensionApi.forceReevaluate();
+  await expectTabsGrouped(extensionApi, firstGroupUrls);
+  await expectTabsGrouped(extensionApi, secondGroupUrls);
+
+  const [firstTarget, secondTarget] = await extensionApi.tabsByUrls([
+    firstGroupUrls[0],
+    secondGroupUrls[0],
+  ]);
+  expect(firstTarget.groupId).not.toBe(secondTarget.groupId);
+
+  await extensionApi.setGroupCollapsed(firstTarget.groupId, false);
+  await extensionApi.setGroupCollapsed(secondTarget.groupId, false);
+  await settlingPage.waitForTimeout(400);
+
+  await extensionApi.evaluate(`
+    const targetUrls = ${JSON.stringify([firstGroupUrls[0], secondGroupUrls[0]])};
+    const tabs = await callbackify(chrome.tabs.query.bind(chrome.tabs), {});
+    const targetTabs = targetUrls.map((url) => tabs.find((tab) => tab.url === url));
+    if (targetTabs.some((tab) => !tab)) throw new Error("Rapid-focus target tab not found");
+
+    for (let iteration = 0; iteration < 8; iteration += 1) {
+      await callbackify(chrome.tabs.update.bind(chrome.tabs), targetTabs[0].id, { active: true });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await callbackify(chrome.tabs.update.bind(chrome.tabs), targetTabs[1].id, { active: true });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    return true;
+  `);
+
+  await expect.poll(async () => {
+    const [firstTab, secondTab] = await extensionApi.tabsByUrls([
+      firstGroupUrls[0],
+      secondGroupUrls[0],
+    ]);
+    const [firstGroup, secondGroup] = await Promise.all([
+      extensionApi.groupById(firstTab.groupId),
+      extensionApi.groupById(secondTab.groupId),
+    ]);
+    return {
+      firstActive: firstTab.active,
+      firstCollapsed: firstGroup.collapsed,
+      secondActive: secondTab.active,
+      secondCollapsed: secondGroup.collapsed,
+    };
+  }, { message: "the newest rapid activation should determine the final managed-group focus state" }).toEqual({
+    firstActive: false,
+    firstCollapsed: true,
+    secondActive: true,
+    secondCollapsed: false,
+  });
+});
+
 test("ignored tabs neither form nor join managed groups", async ({ context, httpServer, extensionApi }) => {
   const firstUrl = httpServer.url("/ignored-a");
   const secondUrl = httpServer.url("/ignored-b");
