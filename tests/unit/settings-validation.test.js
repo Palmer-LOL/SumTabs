@@ -10,8 +10,8 @@ import {
     parseHostnameRulesTextarea,
     splitNonEmptyLines,
     validateImportedSettings,
-} from "../../settings-validation.js";
-import { DEFAULTS } from "../../defaults.js";
+} from "../../src/settings/validation.js";
+import { DEFAULTS } from "../../src/core/defaults.js";
 
 describe("settings hostname normalization", () => {
     it.each([

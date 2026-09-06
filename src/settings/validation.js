@@ -1,4 +1,4 @@
-import { getCustomDomainBundleEntryConflicts, parseCustomDomainRule } from "./grouping.js";
+import { getCustomDomainBundleEntryConflicts, parseCustomDomainRule } from "../core/grouping.js";
 
 export const MIN_GROUPING_THRESHOLD = 2;
 export const VALID_GROUP_COLORS = new Set(["grey", "blue", "red", "yellow", "green", "pink", "purple", "cyan", "orange"]);

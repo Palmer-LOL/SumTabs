@@ -1,11 +1,11 @@
-import { test, expect } from "./fixtures.js";
+import { backgroundPath, popupPath, settingsPath, test, expect } from "./fixtures.js";
 
 test("loads the unpacked MV3 extension and opens an extension page", async ({ context, extensionId, serviceWorker, extensionPage }) => {
   expect(context.serviceWorkers()).toContain(serviceWorker);
-  expect(serviceWorker.url()).toBe(`chrome-extension://${extensionId}/background.js`);
+  expect(serviceWorker.url()).toBe(`chrome-extension://${extensionId}/${backgroundPath}`);
 
-  const settingsPage = await extensionPage("settings.html");
-  await expect(settingsPage).toHaveURL(`chrome-extension://${extensionId}/settings.html`);
+  const settingsPage = await extensionPage(settingsPath);
+  await expect(settingsPage).toHaveURL(`chrome-extension://${extensionId}/${settingsPath}`);
   await expect(settingsPage.getByRole("heading", { name: "SumTabs Settings" })).toBeVisible();
 });
 
@@ -13,9 +13,9 @@ test("loads the popup page modules and core controls inside the extension origin
   const pageErrors = [];
   const popupPage = await context.newPage();
   popupPage.on("pageerror", (error) => pageErrors.push(error));
-  await popupPage.goto(`chrome-extension://${extensionId}/popup.html`);
+  await popupPage.goto(`chrome-extension://${extensionId}/${popupPath}`);
 
-  await expect(popupPage).toHaveURL(`chrome-extension://${extensionId}/popup.html`);
+  await expect(popupPage).toHaveURL(`chrome-extension://${extensionId}/${popupPath}`);
   await expect(popupPage.getByRole("heading", { name: "SumTabs" })).toBeVisible();
   await expect(popupPage.getByRole("button", { name: "Open settings" })).toBeVisible();
   await expect(popupPage.getByRole("button", { name: "Reapply rules to open tabs" })).toBeVisible();
@@ -34,5 +34,11 @@ test("loads the popup page modules and core controls inside the extension origin
   const moreActionsSection = popupPage.locator("#windowActionsSection");
   await expect(currentWindowSection.locator(".popup__window-summary")).toBeAttached();
   await expect(moreActionsSection.locator(".popup__window-summary")).toHaveCount(0);
-  expect(pageErrors, "popup.html should not throw uncaught page errors while loading directly").toEqual([]);
+  await moreActionsSection.locator("summary").click();
+  const closeAllUnpinnedTabs = moreActionsSection.locator("#closeAllUnpinnedTabs");
+  await expect(closeAllUnpinnedTabs).toBeVisible();
+  await expect(closeAllUnpinnedTabs).toHaveAccessibleName(
+    /^(?:Close all \d+ unpinned tabs?|No unpinned tabs to close)$/,
+  );
+  expect(pageErrors, "popup page should not throw uncaught page errors while loading directly").toEqual([]);
 });

@@ -20,7 +20,7 @@ The extension runs entirely in the browser — no network calls, no analytics �
   When a tab changes URL, SumTabs verifies that it still belongs in its current group. If the hostname no longer matches the group identity, the tab is ungrouped and reassigned if appropriate.
 
 - **Focus mode.**  
-  When enabled, navigating or creating a tab collapses all other groups in the window so the active group remains expanded.
+  When enabled, eligible tab creation and navigation, tab activation, and window focus collapse other SumTabs-managed groups in the active window. The active managed group stays expanded; user-created groups remain untouched.
 
 - **Singleton managed-group behavior (optional).**  
   You can choose what happens when a managed `∑ ` group drops to one tab. By default, the singleton group remains. If enabled, SumTabs ungroups the lone tab so the group is removed until grouping conditions are met again.
@@ -85,7 +85,7 @@ Open multiple tabs from the same domain (or matching a custom bundle) and they w
 To configure behavior:
 
 - Open the extension popup and click **Open Settings**.
-- Toggle **Collapse other groups when navigating/creating tabs** to enable or disable focus mode.
+- Toggle **Focus the active managed group when tabs or windows change** to enable or disable focus mode. Focus mode collapses or expands only SumTabs-managed groups and never changes user-created groups.
 - Set **Group when at least this many matching tabs exist** to control when grouping starts (minimum `2`, default `2`).
 - Toggle **Ungroup managed groups when only one tab remains** to remove singleton managed groups automatically (default is off, so singleton managed groups remain grouped).
 - Toggle **Ignore a tab’s initial URL while grouping and enforcing placement** to prevent SumTabs from grouping, reassigning, or enforcing placement for a newly created tab while it remains on the HTTP(S) URL with which it was created. The tab can remain in an existing group during this exemption unless its hostname is listed under **Ignore these specific hostnames**; that rule takes precedence and removes the tab from a managed group. Tabs created on non-HTTP(S) pages can be grouped as soon as they navigate to HTTP(S).
@@ -99,20 +99,14 @@ To configure behavior:
 
 ## Code Structure
 
-- **`background.js`**  
-  Core grouping logic. Listens to tab creation, updates, activation, and window focus events. Includes throttling and re-entrancy safeguards to prevent event storms.
+- **`src/core/`** owns environment-independent defaults, grouping identity and custom-rule logic, and strict HTTP(S) URL helpers.
+- **`src/background/`** owns the Manifest V3 service-worker entry point, synchronized settings state, low-level tab-group operations, and tab/window event coordination.
+- **`src/popup/`** owns the popup page, active-tab status, quick actions, window summary/actions, and popup-specific styles.
+- **`src/settings/`** owns the options page, custom-bundle editor, persistence/conflict handling, import/export, and validation.
+- **`src/ui/`** owns shared base/theme styles and the synchronous theme bootstrap used by both extension pages.
+- **`assets/`** contains extension icons and source branding.
 
-- **`defaults.js`**  
-  Defines default settings, including prefix, collapse flags, backward-compatible separation-rule defaults, and custom bundles.
-
-- **`settings.html` + `settings.js`**  
-  Implements the options page UI and storage logic. Uses semantic, BEM-style class names (e.g. `.settings__row`, `.bundle-editor__toolbar`).
-
-- **`popup.html` + `popup.js`**  
-  Minimal popup providing access to the settings page.
-
-- **`style.css`**  
-  Centralized stylesheet using CSS custom properties for shared design tokens (fonts, spacing, colors). Organized into layout blocks, component blocks, and modifiers using a BEM-style convention for maintainability.
+`manifest.json` remains at the repository root, so the repository root is directly loadable as an unpacked Chromium extension. Normal extension use requires no npm installation, build step, bundling, or transpilation.
 
 ---
 
@@ -138,8 +132,8 @@ This project is licensed under the **[Do What The Fuck You Want To Public Licens
 
 Automated testing is split into two deliberately separate layers:
 
-- **Vitest unit tests** cover deterministic pure JavaScript contracts such as grouping identity resolution, multipart suffix behavior, custom bundle parsing, path-scoped bundle precedence, settings textarea parsing, custom bundle normalization, and persistence payload construction.
-- **Playwright smoke tests** load the actual unpacked Manifest V3 extension into bundled Chromium and verify a small set of browser-integration contracts involving the background service worker, `chrome.tabs`, `chrome.tabGroups`, `chrome.storage.sync`, and extension pages.
+- **Vitest unit tests** cover deterministic JavaScript contracts and repository path integrity without loading a browser.
+- **Playwright smoke tests** load the actual unpacked Manifest V3 extension into bundled Chromium and exercise 29 browser-integration cases involving the background service worker, `chrome.tabs`, `chrome.tabGroups`, `chrome.storage.sync`, and extension pages.
 
 The extension itself remains directly loadable as an unpacked Chromium extension. Normal extension use does **not** require npm installation, Node.js, a build step, bundling, or transpilation.
 
@@ -197,19 +191,18 @@ npm run test:all
 
 ### Current automated coverage
 
-The Vitest suite covers pure grouping and settings-validation contracts, including root-domain resolution, multipart suffix handling, custom bundle rule parsing, path-scoped bundle precedence, bundle conflict/owner helpers, hostname normalization, settings textarea parsing, custom bundle normalization, persistence payload construction, and raw JSON coercion.
+The Vitest suite covers:
 
-The Playwright smoke suite covers only a small number of real Chromium integration paths:
+- Grouping identity and settings-validation contracts, including root-domain resolution, multipart suffix handling, custom bundle parsing and precedence, conflict/owner helpers, hostname normalization, persistence payload construction, import validation, and raw JSON coercion.
+- Shared URL helpers for safe parsing, HTTP/HTTPS acceptance, malformed input, and rejection of `chrome:`, `edge:`, `file:`, `about:`, `chrome-extension:`, `data:`, `ftp:`, and null inputs.
+- Background-controller use of a freshly updated grouping threshold and popup window-action stylesheet injection through an injected Chrome API.
+- Extension layout integrity: exact manifest entries and icon maps, manifest-selected resources, page scripts/stylesheets, static imports/re-exports, literal `chrome.runtime.getURL()` resources, local CSS references, the complete approved source tree, and absence of obsolete root runtime paths.
 
-- The unpacked Manifest V3 extension loads in an isolated persistent Chromium context.
-- The background service worker starts and exposes a discoverable extension ID.
-- A settings extension page can be opened from the extension origin.
-- Two eligible local HTTP tabs can form a managed `∑ ` tab group through Chromium tab APIs.
-- A single eligible HTTP tab remains ungrouped in the smoke scenario.
-- A pinned matching tab remains pinned and outside tab groups while unpinned matching tabs group.
-- A user-created, non-prefixed tab group remains protected during an explicit reevaluation.
-- The popup page can be loaded directly by extension URL and its core controls/modules are present.
-- The settings page can save the grouping threshold and canonical ignored-hostname rules through the real UI, persist them to `chrome.storage.sync`, and reload them.
+The Playwright suite currently defines 29 cases in three files:
+
+- **2 extension startup/page cases:** unpacked MV3 startup and service-worker path; direct options-page loading by extension URL; and direct popup loading with its modules, core controls, section order, window summary, canonical close-all action, and no uncaught page errors.
+- **16 grouping cases:** two-tab grouping and the single-tab threshold; pinned-tab protection; user-group protection; ignored-host exclusion; active-tab preservation at first, middle, and last positions; ignored-host acknowledgement after managed-group cleanup while preserving user groups; initial-URL exemption bypass; singleton cleanup on ignored navigation; active and background ignored-navigation focus behavior; focus-mode collapse of managed groups while preserving an active user-created group; rapid managed-group activation ordering; regrouping after returning from an ignored hostname; and immediate removal of an ignored tab created inside a managed group.
+- **11 settings cases:** threshold save/reload; discard; export/import with unknown-key preservation; malformed-import rejection; ignored-host canonicalization; alignment of both legacy initial-URL keys; unsaved bundle preservation during a live ignore-list update; explicit resolution of ignore-list conflicts (including defaults); settings/popup lock coordination; and completion of a queued popup ignore update after the popup closes.
 
 The Playwright tests use a loopback HTTP server and isolated browser profiles. They do not depend on public websites or a developer's normal browser profile.
 

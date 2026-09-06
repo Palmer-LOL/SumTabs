@@ -5,9 +5,9 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="color-scheme" content="light dark" />
 		<title>SumTabs Settings</title>
-		<script src="theme.js"></script>
-		<link rel="stylesheet" href="style.css" />
-		<link rel="stylesheet" href="theme.css" />
+		<script src="../ui/theme.js"></script>
+		<link rel="stylesheet" href="../ui/base.css" />
+		<link rel="stylesheet" href="../ui/theme.css" />
 	</head>
 	<body class="page settings">
 		<div class="settings__shell">
@@ -73,17 +73,18 @@
 									aria-describedby="collapseOtherGroupsHelp"
 								/>
 								<span
-									>Focus the active group when tabs
-									change</span
+									>Focus the active managed group when tabs or
+									windows change</span
 								>
 							</label>
 							<div
 								class="settings__help-text"
 								id="collapseOtherGroupsHelp"
 							>
-								Collapse other managed groups when a tab is
-								opened or navigates to another site. Turn this
-								off if you regularly work across several groups.
+								On tab activation or window focus, and after eligible
+								tabs are opened or navigated, collapse other managed
+								groups. SumTabs expands the active managed group;
+								user-created groups remain untouched.
 							</div>
 						</div>
 
@@ -671,6 +672,6 @@
 			</div>
 		</footer>
 
-		<script type="module" src="settings.js"></script>
+		<script type="module" src="index.js"></script>
 	</body>
 </html>

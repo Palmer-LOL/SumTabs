@@ -9,6 +9,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const repoRoot = path.resolve(__dirname, "../..");
 export const managedPrefix = "∑ ";
 export const noGroupId = -1;
+export const backgroundPath = "src/background/index.js";
+export const settingsPath = "src/settings/settings.html";
+export const popupPath = "src/popup/popup.html";
 
 function chromeCallback(expression) {
   return `(async () => {
@@ -122,7 +125,7 @@ export const test = base.extend({
   extensionApi: async ({ context, extensionId, serviceWorker }, use) => {
     const evaluateInWorker = (expression) => evaluateChrome(serviceWorker, expression);
     const sendExtensionMessage = async (message) => {
-      const page = await openExtensionPage(context, extensionId, "settings.html");
+      const page = await openExtensionPage(context, extensionId, settingsPath);
       try {
         return await page.evaluate((payload) => chrome.runtime.sendMessage(payload), message);
       } finally {
@@ -142,7 +145,7 @@ export const test = base.extend({
         shouldIgnore,
       }),
       forceReevaluateTrackingCreatedTabs: async () => {
-        const page = await openExtensionPage(context, extensionId, "settings.html");
+        const page = await openExtensionPage(context, extensionId, settingsPath);
         try {
           await evaluateInWorker("globalThis.__sumtabsCreatedTabs = []; globalThis.__sumtabsCreatedTabsListener = (tab) => globalThis.__sumtabsCreatedTabs.push({ id: tab.id, url: tab.pendingUrl || tab.url || '' }); chrome.tabs.onCreated.addListener(globalThis.__sumtabsCreatedTabsListener); return true;");
           await page.evaluate((payload) => chrome.runtime.sendMessage(payload), { type: "sumtabs:force-reevaluate" });
@@ -153,7 +156,7 @@ export const test = base.extend({
         }
       },
       forceReevaluateWithActiveTab: async (url) => {
-        const page = await openExtensionPage(context, extensionId, "settings.html");
+        const page = await openExtensionPage(context, extensionId, settingsPath);
         try {
           await evaluateInWorker(`const targetUrl = ${JSON.stringify(url)}; const tabs = await callbackify(chrome.tabs.query.bind(chrome.tabs), {}); const tab = tabs.find((candidate) => candidate.url === targetUrl); if (!tab) throw new Error('Tab not found for activation'); await callbackify(chrome.tabs.update.bind(chrome.tabs), tab.id, { active: true }); return true;`);
           return await page.evaluate((payload) => chrome.runtime.sendMessage(payload), { type: "sumtabs:force-reevaluate" });

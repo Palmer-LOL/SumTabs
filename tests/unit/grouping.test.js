@@ -9,7 +9,7 @@ import {
     parseCustomDomainGroups,
     parseCustomDomainRule,
     resolveGroupingForHostname,
-} from "../../grouping.js";
+} from "../../src/core/grouping.js";
 
 const prefix = "∑ ";
 const multipart = ["co.uk", "com.au"];
