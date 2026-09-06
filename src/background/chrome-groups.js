@@ -17,6 +17,8 @@ const GROUP_OWNERSHIP_PROTECTED = "protected";
 export function createChromeGroups({ chromeApi, getManagedPrefix }) {
     const none = chromeApi.tabGroups.TAB_GROUP_ID_NONE;
     let mutationLockUntil = 0;
+    let mutationUnlockTimer = null;
+    const mutationUnlockWaiters = new Set();
     const groupTitleCache = new Map();
 
     function nowMs() {
@@ -27,9 +29,31 @@ export function createChromeGroups({ chromeApi, getManagedPrefix }) {
         return nowMs() < mutationLockUntil;
     }
 
+    function scheduleMutationUnlock() {
+        if (mutationUnlockTimer != null) clearTimeout(mutationUnlockTimer);
+
+        const remainingMs = Math.max(0, mutationLockUntil - nowMs());
+        mutationUnlockTimer = setTimeout(() => {
+            mutationUnlockTimer = null;
+            const waiters = [...mutationUnlockWaiters];
+            mutationUnlockWaiters.clear();
+            for (const resolve of waiters) resolve();
+        }, remainingMs);
+    }
+
     function acquireMutationLock(ms = 250) {
         // Extend lock slightly into the future.
         mutationLockUntil = Math.max(mutationLockUntil, nowMs() + ms);
+        if (mutationUnlockWaiters.size > 0) scheduleMutationUnlock();
+    }
+
+    function waitForMutationUnlock() {
+        if (!underMutationLock()) return Promise.resolve();
+
+        return new Promise((resolve) => {
+            mutationUnlockWaiters.add(resolve);
+            scheduleMutationUnlock();
+        });
     }
 
     function isManagedGroupTitle(title) {
@@ -99,11 +123,13 @@ export function createChromeGroups({ chromeApi, getManagedPrefix }) {
     }
 
     async function setGroupCollapsed(groupId, collapsed) {
-        if (await classifyGroupOwnership(groupId, { fresh: true }) !== GROUP_OWNERSHIP_MANAGED) {
-            return false;
-        }
-
         try {
+            const group = await chromeApi.tabGroups.get(groupId);
+            const title = group?.title ?? null;
+            groupTitleCache.set(groupId, title);
+            if (!isManagedGroupTitle(title)) return false;
+            if (!!group?.collapsed === collapsed) return false;
+
             acquireMutationLock(250);
             await chromeApi.tabGroups.update(groupId, { collapsed });
             return true;
@@ -278,6 +304,7 @@ export function createChromeGroups({ chromeApi, getManagedPrefix }) {
     return {
         underMutationLock,
         acquireMutationLock,
+        waitForMutationUnlock,
         getGroupTitle,
         classifyGroupOwnership,
         classifyTabGroup,

@@ -20,7 +20,7 @@ The extension runs entirely in the browser — no network calls, no analytics �
   When a tab changes URL, SumTabs verifies that it still belongs in its current group. If the hostname no longer matches the group identity, the tab is ungrouped and reassigned if appropriate.
 
 - **Focus mode.**  
-  When enabled, navigating or creating a tab collapses all other groups in the window so the active group remains expanded.
+  When enabled, eligible tab creation and navigation, tab activation, and window focus collapse other SumTabs-managed groups in the active window. The active managed group stays expanded; user-created groups remain untouched.
 
 - **Singleton managed-group behavior (optional).**  
   You can choose what happens when a managed `∑ ` group drops to one tab. By default, the singleton group remains. If enabled, SumTabs ungroups the lone tab so the group is removed until grouping conditions are met again.
@@ -85,7 +85,7 @@ Open multiple tabs from the same domain (or matching a custom bundle) and they w
 To configure behavior:
 
 - Open the extension popup and click **Open Settings**.
-- Toggle **Collapse other groups when navigating/creating tabs** to enable or disable focus mode.
+- Toggle **Focus the active managed group when tabs or windows change** to enable or disable focus mode. Focus mode collapses or expands only SumTabs-managed groups and never changes user-created groups.
 - Set **Group when at least this many matching tabs exist** to control when grouping starts (minimum `2`, default `2`).
 - Toggle **Ungroup managed groups when only one tab remains** to remove singleton managed groups automatically (default is off, so singleton managed groups remain grouped).
 - Toggle **Ignore a tab’s initial URL while grouping and enforcing placement** to prevent SumTabs from grouping, reassigning, or enforcing placement for a newly created tab while it remains on the HTTP(S) URL with which it was created. The tab can remain in an existing group during this exemption unless its hostname is listed under **Ignore these specific hostnames**; that rule takes precedence and removes the tab from a managed group. Tabs created on non-HTTP(S) pages can be grouped as soon as they navigate to HTTP(S).
@@ -133,7 +133,7 @@ This project is licensed under the **[Do What The Fuck You Want To Public Licens
 Automated testing is split into two deliberately separate layers:
 
 - **Vitest unit tests** cover deterministic JavaScript contracts and repository path integrity without loading a browser.
-- **Playwright smoke tests** load the actual unpacked Manifest V3 extension into bundled Chromium and exercise 26 browser-integration cases involving the background service worker, `chrome.tabs`, `chrome.tabGroups`, `chrome.storage.sync`, and extension pages.
+- **Playwright smoke tests** load the actual unpacked Manifest V3 extension into bundled Chromium and exercise 29 browser-integration cases involving the background service worker, `chrome.tabs`, `chrome.tabGroups`, `chrome.storage.sync`, and extension pages.
 
 The extension itself remains directly loadable as an unpacked Chromium extension. Normal extension use does **not** require npm installation, Node.js, a build step, bundling, or transpilation.
 
@@ -198,10 +198,10 @@ The Vitest suite covers:
 - Background-controller use of a freshly updated grouping threshold and popup window-action stylesheet injection through an injected Chrome API.
 - Extension layout integrity: exact manifest entries and icon maps, manifest-selected resources, page scripts/stylesheets, static imports/re-exports, literal `chrome.runtime.getURL()` resources, local CSS references, the complete approved source tree, and absence of obsolete root runtime paths.
 
-The Playwright suite currently defines 26 cases in three files:
+The Playwright suite currently defines 29 cases in three files:
 
 - **2 extension startup/page cases:** unpacked MV3 startup and service-worker path; direct options-page loading by extension URL; and direct popup loading with its modules, core controls, section order, window summary, canonical close-all action, and no uncaught page errors.
-- **13 grouping cases:** two-tab grouping and the single-tab threshold; pinned-tab protection; user-group protection; ignored-host exclusion; active-tab preservation at first, middle, and last positions; ignored-host acknowledgement after managed-group cleanup while preserving user groups; initial-URL exemption bypass; singleton cleanup on ignored navigation; configured collapse behavior; regrouping after returning from an ignored hostname; and immediate removal of an ignored tab created inside a managed group.
+- **16 grouping cases:** two-tab grouping and the single-tab threshold; pinned-tab protection; user-group protection; ignored-host exclusion; active-tab preservation at first, middle, and last positions; ignored-host acknowledgement after managed-group cleanup while preserving user groups; initial-URL exemption bypass; singleton cleanup on ignored navigation; active and background ignored-navigation focus behavior; focus-mode collapse of managed groups while preserving an active user-created group; rapid managed-group activation ordering; regrouping after returning from an ignored hostname; and immediate removal of an ignored tab created inside a managed group.
 - **11 settings cases:** threshold save/reload; discard; export/import with unknown-key preservation; malformed-import rejection; ignored-host canonicalization; alignment of both legacy initial-URL keys; unsaved bundle preservation during a live ignore-list update; explicit resolution of ignore-list conflicts (including defaults); settings/popup lock coordination; and completion of a queued popup ignore update after the popup closes.
 
 The Playwright tests use a loopback HTTP server and isolated browser profiles. They do not depend on public websites or a developer's normal browser profile.
