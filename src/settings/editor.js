@@ -145,11 +145,7 @@ export function createSettingsEditor({ documentRef }) {
             commonMultipartSuffixes: $("commonMultipartSuffixes").value,
             excludedFromRootCollapse: $("excludedFromRootCollapse").value,
             ignoredHostnames: $("ignoredHostnames").value,
-            customDomainGroups: customGroupsState.map((group) => ({
-                title: String(group?.title ?? ""),
-                domainsText: String(group?.domainsText ?? ""),
-                color: String(group?.color ?? ""),
-            })),
+            customDomainGroups: groupsForRawJson(customGroupsState),
         });
     }
 

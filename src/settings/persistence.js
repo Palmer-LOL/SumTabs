@@ -1,5 +1,5 @@
 import { DEFAULTS } from "../core/defaults.js";
-import { arrayToLines, normalizeStoredGroups } from "./validation.js";
+import { arrayToLines, groupsForRawJson, normalizeStoredGroups } from "./validation.js";
 
 const IGNORED_HOSTNAMES_STORAGE_LOCK = "sumtabs:ignored-hostnames-storage";
 
@@ -101,11 +101,7 @@ export function createSettingsPersistence({
         const snapshot = JSON.parse(savedSnapshot);
         snapshot.customDomainGroups = updateEditor
             ? bundleUiSnapshot()
-            : normalizeStoredGroups(groups).map(group => ({
-                title: group.title,
-                domainsText: group.domainsText,
-                color: group.color,
-            }));
+            : groupsForRawJson(normalizeStoredGroups(groups));
         savedSnapshot = JSON.stringify(snapshot);
         clearBundleConflict();
     }
