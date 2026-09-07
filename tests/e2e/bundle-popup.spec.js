@@ -185,7 +185,7 @@ test("rejects an add when bundles are renamed or reordered while the request wai
 
   await expect(popup.locator("#popupFeedback")).toContainText("Bundles changed in Settings");
   await expect.poll(async () => (await extensionApi.getStorage()).customDomainGroups).toEqual(reordered);
-  await expect(popup.locator("#bundleSelect option").first()).toHaveText("Choose a bundle again");
+  await expect(popup.locator("#bundleSelect option").first()).toHaveText("Choose a bundle");
   await expect(popup.locator("#bundleSelect")).toHaveValue("");
   await expect(popup.locator("#applyBundleAction")).toBeDisabled();
   await expect(popup.locator("#removeBundleAction")).toBeDisabled();
