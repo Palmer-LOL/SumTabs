@@ -151,3 +151,31 @@ export async function getActiveTabStatus({ chromeApi, defaults }) {
 		},
 	};
 }
+
+export async function getBundleActionsContext({ chromeApi, defaults }) {
+	const [[activeTab], settings] = await Promise.all([
+		chromeApi.tabs.query({ active: true, currentWindow: true }),
+		chromeApi.storage.sync.get(defaults),
+	]);
+	let userGroup = false;
+	if (activeTab && Number(activeTab.groupId) >= 0 && chromeApi.tabGroups?.get) {
+		try {
+			const group = await chromeApi.tabGroups.get(activeTab.groupId);
+			userGroup = !String(group?.title ?? "").startsWith(
+				settings.autoGroupPrefix ?? defaults.autoGroupPrefix,
+			);
+		} catch {
+			userGroup = true;
+		}
+	}
+	return {
+		url: activeTab?.url ?? "",
+		activeTab: activeTab ? { ...activeTab, userGroup } : null,
+		settings: {
+			...settings,
+			customDomainGroups: Array.isArray(settings.customDomainGroups)
+				? settings.customDomainGroups
+				: [],
+		},
+	};
+}
