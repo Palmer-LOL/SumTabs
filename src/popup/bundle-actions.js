@@ -8,7 +8,7 @@ function bundleTitle(bundle, index) {
 	return String(bundle?.title ?? "").trim() || `Untitled bundle ${index + 1}`;
 }
 
-function fillSelect(select, options, preferredValue) {
+function fillSelect(select, options, preferredValue, { selectFirst = false } = {}) {
 	select.replaceChildren();
 	for (const item of options) {
 		const option = select.ownerDocument.createElement("option");
@@ -18,6 +18,8 @@ function fillSelect(select, options, preferredValue) {
 	}
 	if (options.some((item) => String(item.value) === String(preferredValue))) {
 		select.value = String(preferredValue);
+	} else if (selectFirst && options.length > 0) {
+		select.value = String(options[0].value);
 	}
 }
 
@@ -48,12 +50,13 @@ export function createBundleActions({ chromeApi, elements, announce, refresh }) 
 	let selectedHost = "";
 	let selectedPath = "";
 	let selectedRule = "";
+	let requireBundleSelection = false;
 
 	function readSelections() {
 		selectedBundle = elements.bundleSelect.value || selectedBundle;
 		selectedHost = elements.hostScope.value || selectedHost;
 		selectedPath = elements.pathScope.value;
-		selectedRule = elements.ruleSelect.value || selectedRule;
+		selectedRule = elements.ruleSelect.value;
 	}
 
 	function render(nextContext) {
@@ -65,11 +68,15 @@ export function createBundleActions({ chromeApi, elements, announce, refresh }) 
 		elements.card.hidden = false;
 		elements.card.setAttribute("aria-busy", String(busy));
 
-		fillSelect(elements.bundleSelect, bundles.map((bundle, index) => ({
+		const bundleOptions = bundles.map((bundle, index) => ({
 			value: index, label: bundleTitle(bundle, index),
-		})), selectedBundle);
+		}));
+		if (requireBundleSelection) {
+			bundleOptions.unshift({ value: "", label: "Choose a bundle" });
+		}
+		fillSelect(elements.bundleSelect, bundleOptions, requireBundleSelection ? "" : selectedBundle, { selectFirst: true });
 		selectedBundle = elements.bundleSelect.value;
-		const bundleIndex = Number(selectedBundle);
+		const bundleIndex = selectedBundle === "" ? -1 : Number(selectedBundle);
 		const selected = bundles[bundleIndex];
 		elements.bundleSelect.disabled = busy || bundles.length === 0;
 		elements.bundleColor.textContent = selected
@@ -84,7 +91,7 @@ export function createBundleActions({ chromeApi, elements, announce, refresh }) 
 		fillSelect(elements.ruleSelect, rules.map((rule) => ({ value: rule, label: rule })), selectedRule);
 		selectedRule = elements.ruleSelect.value;
 		elements.ruleSelect.disabled = busy || rules.length === 0;
-		elements.remove.disabled = busy || rules.length === 0;
+		elements.remove.disabled = busy || !selected || !selectedRule;
 
 		const options = getBundleRuleOptions({
 			url: context?.url,
@@ -131,16 +138,19 @@ export function createBundleActions({ chromeApi, elements, announce, refresh }) 
 		if (context?.activeTab?.pinned) message += " This pinned tab stays untouched.";
 		else if (ignored) message += " This ignored tab stays unmanaged until its ignore rule is removed.";
 		else if (context?.activeTab?.userGroup) message += " SumTabs will not take over this user-created group.";
-		if (selectedRule && !selectedRule.includes("/")) {
-			message += " Removing this host-wide rule can affect other matching URLs.";
+		if (selectedRule) {
+			message += selectedRule.includes("/")
+				? " Removing this path-prefix rule can affect other matching URLs and descendants."
+				: " Removing this host-wide rule can affect other matching URLs.";
 		}
 		elements.status.textContent = message;
 	}
 
 	async function mutate(operation) {
 		if (busy || !context) return;
+		if (operation === "add" ? elements.apply.disabled : elements.remove.disabled) return;
 		readSelections();
-		const bundleIndex = Number(selectedBundle);
+		const bundleIndex = selectedBundle === "" ? -1 : Number(selectedBundle);
 		const bundles = Array.isArray(context.settings?.customDomainGroups) ? context.settings.customDomainGroups : [];
 		const built = operation === "add"
 			? buildBundleRuleEntry({ hostname: selectedHost, pathPrefix: selectedPath })
@@ -148,19 +158,30 @@ export function createBundleActions({ chromeApi, elements, announce, refresh }) 
 		if (!Number.isInteger(bundleIndex) || !bundles[bundleIndex] || !built.valid) return;
 		busy = true;
 		render(context);
+		let response;
 		try {
-			const response = await chromeApi.runtime.sendMessage({
+			response = await chromeApi.runtime.sendMessage({
 				type: "sumtabs:update-bundle-rule",
 				operation,
 				bundleIndex,
 				expectedBundlesSnapshot: JSON.stringify(bundles),
 				entry: built.canonicalEntry,
 			});
-			announce(resultMessage(response, operation, bundleTitle(bundles[bundleIndex], bundleIndex)));
-			await refresh();
 		} catch (error) {
 			console.error("Failed to update custom bundle rule", error);
 			announce("Could not update the bundle rule. Try again.");
+			busy = false;
+			render(context);
+			return;
+		}
+
+		announce(resultMessage(response, operation, bundleTitle(bundles[bundleIndex], bundleIndex)));
+		if (response?.status === "stale-bundles") requireBundleSelection = true;
+		try {
+			await refresh();
+		} catch (error) {
+			console.error("Bundle rule updated but popup refresh failed", error);
+			announce(`${resultMessage(response, operation, bundleTitle(bundles[bundleIndex], bundleIndex))} The popup view could not refresh.`);
 		} finally {
 			busy = false;
 			render(context);
@@ -168,7 +189,13 @@ export function createBundleActions({ chromeApi, elements, announce, refresh }) 
 	}
 
 	function bind() {
-		for (const select of [elements.bundleSelect, elements.hostScope, elements.pathScope, elements.ruleSelect]) {
+		elements.bundleSelect.addEventListener("change", () => {
+			requireBundleSelection = false;
+			selectedRule = "";
+			elements.ruleSelect.value = "";
+			render(context);
+		});
+		for (const select of [elements.hostScope, elements.pathScope, elements.ruleSelect]) {
 			select.addEventListener("change", () => render(context));
 		}
 		elements.apply.addEventListener("click", () => mutate("add"));
