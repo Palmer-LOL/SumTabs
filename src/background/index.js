@@ -1,5 +1,6 @@
 import { DEFAULTS } from "../core/defaults.js";
 import { createChromeGroups } from "./chrome-groups.js";
+import { createBundleMutationService } from "./bundle-mutations.js";
 import { createSettingsState } from "./settings-state.js";
 import { createTabController } from "./tab-controller.js";
 
@@ -16,6 +17,12 @@ const controller = createTabController({
     chromeApi: chrome,
     settingsState,
     chromeGroups,
+});
+const bundleMutations = createBundleMutationService({
+    chromeApi: chrome,
+    navigatorRef: navigator,
+    settingsState,
+    enqueueForceReevaluation: controller.enqueueForceReevaluation,
 });
 
 chrome.runtime.onStartup?.addListener(async () => {
@@ -45,7 +52,9 @@ chrome.tabGroups.onRemoved?.addListener(controller.handleTabGroupRemoved);
 chrome.tabGroups.onUpdated?.addListener(controller.handleTabGroupUpdated);
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    const response = controller.handleRuntimeMessage(message);
+    const response = message?.type === "sumtabs:update-bundle-rule"
+        ? bundleMutations.update(message)
+        : controller.handleRuntimeMessage(message);
     if (!response) return undefined;
     response.then(sendResponse);
     return true;

@@ -15,6 +15,9 @@ const elements = {
     ignoredHostnamesConflict: $("ignoredHostnamesConflict"),
     useStoredIgnoredHostnames: $("useStoredIgnoredHostnames"),
     keepDraftIgnoredHostnames: $("keepDraftIgnoredHostnames"),
+    bundleConflict: $("bundleConflict"),
+    useStoredBundles: $("useStoredBundles"),
+    keepDraftBundles: $("keepDraftBundles"),
 };
 
 function setStatus(message, state = "neutral") {
@@ -78,6 +81,8 @@ elements.importSettingsFile.addEventListener("change", (event) => {
 });
 elements.useStoredIgnoredHostnames.addEventListener("click", persistence.useStoredIgnoredHostnames);
 elements.keepDraftIgnoredHostnames.addEventListener("click", persistence.keepDraftIgnoredHostnames);
+elements.useStoredBundles.addEventListener("click", persistence.useStoredBundles);
+elements.keepDraftBundles.addEventListener("click", persistence.keepDraftBundles);
 
 window.addEventListener("beforeunload", (event) => {
     if (!persistence.hasUnsavedChanges()) return;

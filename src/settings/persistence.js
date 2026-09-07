@@ -1,5 +1,5 @@
 import { DEFAULTS } from "../core/defaults.js";
-import { arrayToLines } from "./validation.js";
+import { arrayToLines, normalizeStoredGroups } from "./validation.js";
 
 const IGNORED_HOSTNAMES_STORAGE_LOCK = "sumtabs:ignored-hostnames-storage";
 
@@ -16,6 +16,8 @@ export function createSettingsPersistence({
     let savingIgnoredHostnamesValue = null;
     let ignoredHostnamesBaseline = "";
     let ignoredHostnamesConflict = null;
+    let bundleBaseline = "[]";
+    let bundleConflict = null;
 
     function storedIgnoredHostnamesText(settings) {
         return arrayToLines(settings.ignoredHostnames ?? DEFAULTS.ignoredHostnames);
@@ -72,6 +74,64 @@ export function createSettingsPersistence({
         return editor.captureUiSnapshot() !== savedSnapshot;
     }
 
+    function storedBundles(settings) {
+        return Array.isArray(settings?.customDomainGroups) ? settings.customDomainGroups : [];
+    }
+
+    function bundleUiSnapshot() {
+        return JSON.parse(editor.captureUiSnapshot()).customDomainGroups;
+    }
+
+    function savedBundleUiSnapshot() {
+        return JSON.parse(savedSnapshot).customDomainGroups;
+    }
+
+    function bundlesAreDirty() {
+        return JSON.stringify(bundleUiSnapshot()) !== JSON.stringify(savedBundleUiSnapshot());
+    }
+
+    function clearBundleConflict() {
+        bundleConflict = null;
+        elements.bundleConflict.hidden = true;
+    }
+
+    function acceptBundleBaseline(groups, { updateEditor = false } = {}) {
+        bundleBaseline = JSON.stringify(groups);
+        if (updateEditor) editor.replaceGroupsFromStorage(groups);
+        const snapshot = JSON.parse(savedSnapshot);
+        snapshot.customDomainGroups = updateEditor
+            ? bundleUiSnapshot()
+            : normalizeStoredGroups(groups).map(group => ({
+                title: group.title,
+                domainsText: group.domainsText,
+                color: group.color,
+            }));
+        savedSnapshot = JSON.stringify(snapshot);
+        clearBundleConflict();
+    }
+
+    function showBundleConflict(groups) {
+        bundleConflict = { storedGroups: structuredClone(groups) };
+        elements.bundleConflict.hidden = false;
+        updateSaveState({ message: "Resolve the custom-bundle conflict before saving.", state: "error" });
+    }
+
+    function handleExternalBundles(value) {
+        const incoming = Array.isArray(value) ? value : [];
+        const incomingSnapshot = JSON.stringify(incoming);
+        if (incomingSnapshot === bundleBaseline) {
+            clearBundleConflict();
+        } else if (!bundlesAreDirty() && !editor.hasJsonDraft()) {
+            acceptBundleBaseline(incoming, { updateEditor: true });
+        } else if (JSON.stringify(editor.getPersistenceValues().customDomainGroups) === incomingSnapshot) {
+            acceptBundleBaseline(incoming);
+        } else {
+            showBundleConflict(incoming);
+            return;
+        }
+        updateSaveState();
+    }
+
     function hasUnsavedChanges() {
         return hasUiChanges() || editor.hasJsonDraft();
     }
@@ -81,17 +141,19 @@ export function createSettingsPersistence({
 
         const errors = editor.validateSettings();
         const dirty = hasUiChanges();
-        const saveBlocked = errors.length > 0 || editor.hasJsonDraft() || !!ignoredHostnamesConflict;
+        const saveBlocked = errors.length > 0 || editor.hasJsonDraft() || !!ignoredHostnamesConflict || !!bundleConflict;
         elements.save.disabled = !dirty || saveBlocked;
 
         if (customMessage) {
             setStatus(customMessage.message, customMessage.state);
         } else if (errors.length) {
             setStatus(`${errors.length} ${errors.length === 1 ? "issue needs" : "issues need"} attention before saving.`, "error");
-        } else if (editor.hasJsonDraft()) {
-            setStatus("Raw JSON has unapplied changes.", "warning");
         } else if (ignoredHostnamesConflict) {
             setStatus("Resolve the ignored-hostname conflict before saving.", "error");
+        } else if (bundleConflict) {
+            setStatus("Resolve the custom-bundle conflict before saving.", "error");
+        } else if (editor.hasJsonDraft()) {
+            setStatus("Raw JSON has unapplied changes.", "warning");
         } else if (dirty) {
             setStatus("Unsaved changes.", "warning");
         } else {
@@ -111,7 +173,9 @@ export function createSettingsPersistence({
         editor.populateForm(stored);
         savedSnapshot = editor.captureUiSnapshot();
         ignoredHostnamesBaseline = storedIgnoredHostnamesText(stored);
+        bundleBaseline = JSON.stringify(storedBundles(stored));
         clearIgnoredHostnamesConflict();
+        clearBundleConflict();
         loading = false;
         updateSaveState();
     }
@@ -119,7 +183,7 @@ export function createSettingsPersistence({
     async function save() {
         const editorValues = editor.getPersistenceValues();
         const errors = editor.validateSettings();
-        if (errors.length || editor.hasJsonDraft() || ignoredHostnamesConflict) {
+        if (errors.length || editor.hasJsonDraft() || ignoredHostnamesConflict || bundleConflict) {
             updateSaveState();
             return;
         }
@@ -141,6 +205,18 @@ export function createSettingsPersistence({
                         acceptIgnoredHostnamesBaseline(latestIgnoredHostnames);
                     } else {
                         showIgnoredHostnamesConflict(latestIgnoredHostnames);
+                        return null;
+                    }
+                }
+
+                const latestBundles = storedBundles(latest);
+                if (JSON.stringify(latestBundles) !== bundleBaseline) {
+                    if (!bundlesAreDirty() && !editor.hasJsonDraft()) {
+                        acceptBundleBaseline(latestBundles, { updateEditor: true });
+                    } else if (JSON.stringify(editorValues.customDomainGroups) === JSON.stringify(latestBundles)) {
+                        acceptBundleBaseline(latestBundles);
+                    } else {
+                        showBundleConflict(latestBundles);
                         return null;
                     }
                 }
@@ -176,7 +252,9 @@ export function createSettingsPersistence({
             editor.populateForm(savedSettings);
             savedSnapshot = editor.captureUiSnapshot();
             ignoredHostnamesBaseline = storedIgnoredHostnamesText(savedSettings);
+            bundleBaseline = JSON.stringify(storedBundles(savedSettings));
             clearIgnoredHostnamesConflict();
+            clearBundleConflict();
             updateSaveState({ message: "Changes saved.", state: "valid" });
         } catch (error) {
             console.error("Failed to save SumTabs settings", error);
@@ -191,7 +269,9 @@ export function createSettingsPersistence({
         editor.populateForm(stored);
         savedSnapshot = editor.captureUiSnapshot();
         ignoredHostnamesBaseline = storedIgnoredHostnamesText(stored);
+        bundleBaseline = JSON.stringify(storedBundles(stored));
         clearIgnoredHostnamesConflict();
+        clearBundleConflict();
         updateSaveState({ message: "Unsaved changes discarded.", state: "neutral" });
     }
 
@@ -206,15 +286,21 @@ export function createSettingsPersistence({
         } else {
             clearIgnoredHostnamesConflict();
         }
+        if (bundleConflict) acceptBundleBaseline(bundleConflict.storedGroups);
+        else clearBundleConflict();
         editor.loadDefaultsIntoEditor();
         updateSaveState({ message: "Defaults loaded. Save changes to apply them.", state: "warning" });
     }
 
     function handleStorageChange(changes, areaName) {
-        if (areaName !== "sync" || !changes.ignoredHostnames || loading) return;
-        const incomingValue = arrayToLines(changes.ignoredHostnames.newValue ?? DEFAULTS.ignoredHostnames);
-        if (savingIgnoredHostnamesValue !== null && incomingValue === savingIgnoredHostnamesValue) return;
-        handleExternalIgnoredHostnames(changes.ignoredHostnames.newValue);
+        if (areaName !== "sync" || loading) return;
+        if (changes.ignoredHostnames) {
+            const incomingValue = arrayToLines(changes.ignoredHostnames.newValue ?? DEFAULTS.ignoredHostnames);
+            if (savingIgnoredHostnamesValue === null || incomingValue !== savingIgnoredHostnamesValue) {
+                handleExternalIgnoredHostnames(changes.ignoredHostnames.newValue);
+            }
+        }
+        if (changes.customDomainGroups) handleExternalBundles(changes.customDomainGroups.newValue);
     }
 
     function useStoredIgnoredHostnames() {
@@ -229,6 +315,18 @@ export function createSettingsPersistence({
         updateSaveState();
     }
 
+    function useStoredBundles() {
+        if (!bundleConflict) return;
+        acceptBundleBaseline(bundleConflict.storedGroups, { updateEditor: true });
+        updateSaveState();
+    }
+
+    function keepDraftBundles() {
+        if (!bundleConflict) return;
+        acceptBundleBaseline(bundleConflict.storedGroups);
+        updateSaveState();
+    }
+
     return {
         load,
         save,
@@ -239,5 +337,7 @@ export function createSettingsPersistence({
         hasUnsavedChanges,
         useStoredIgnoredHostnames,
         keepDraftIgnoredHostnames,
+        useStoredBundles,
+        keepDraftBundles,
     };
 }

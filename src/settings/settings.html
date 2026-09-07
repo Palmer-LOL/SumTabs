@@ -346,6 +346,13 @@
 					<div
 						class="disclosure-card__content settings__section-content"
 					>
+						<div id="bundleConflict" class="settings__conflict-notice" role="alert" hidden>
+							<p>The stored custom bundles changed while you were editing. Choose which bundle value to use before saving.</p>
+							<div class="settings__button-row">
+								<button class="button" id="useStoredBundles" type="button">Use current stored bundles</button>
+								<button class="button" id="keepDraftBundles" type="button">Keep my bundle draft</button>
+							</div>
+						</div>
 						<div
 							class="bundle-editor__empty"
 							id="bundleEmptyState"

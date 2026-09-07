@@ -188,11 +188,14 @@ export function normalizeStoredGroups(groups) {
     return groups.map((group) => {
         const color = String(group?.color ?? "").trim().toLowerCase();
         const domainsText = domainsToLines(Array.isArray(group?.domains) ? group.domains : []);
-        return {
+        const normalized = {
+            ...structuredClone(group),
             title: String(group?.title ?? "").trim(),
             domainsText,
             color: VALID_GROUP_COLORS.has(color) ? color : "",
         };
+        delete normalized.domains;
+        return normalized;
     });
 }
 
@@ -201,22 +204,28 @@ export function groupRawDomains(group) {
 }
 
 export function groupsForRawJson(customGroupsState) {
-    return (customGroupsState ?? []).map((group) => ({
-        title: String(group?.title ?? ""),
-        domains: groupRawDomains(group),
-        ...(VALID_GROUP_COLORS.has(String(group?.color ?? "")) ? { color: group.color } : {}),
-    }));
+    return (customGroupsState ?? []).map((group) => {
+        const raw = { ...structuredClone(group), title: String(group?.title ?? ""), domains: groupRawDomains(group) };
+        delete raw.domainsText;
+        if (VALID_GROUP_COLORS.has(String(group?.color ?? ""))) raw.color = group.color;
+        else delete raw.color;
+        return raw;
+    });
 }
 
 export function groupsForPersistence(customGroupsState) {
     return (customGroupsState ?? []).map((group) => {
         const parsedDomains = parseDomainsTextarea(group?.domainsText ?? "");
         const color = String(group?.color ?? "").trim().toLowerCase();
-        return {
+        const persisted = {
+            ...structuredClone(group),
             title: String(group?.title ?? "").trim(),
             domains: parsedDomains.validDomains,
             ...(VALID_GROUP_COLORS.has(color) ? { color } : {}),
         };
+        delete persisted.domainsText;
+        if (!VALID_GROUP_COLORS.has(color)) delete persisted.color;
+        return persisted;
     });
 }
 
