@@ -1,11 +1,10 @@
 import {
     buildCustomBundleMaps,
-    getCustomDomainBundleEntryOwners,
     getRootDomain,
     resolveGroupingForHostname,
 } from "./grouping.js";
 import { isWebUrl, safeParseUrl } from "./urls.js";
-import { canonicalizeDomainEntry } from "../settings/validation.js";
+import { canonicalizeDomainEntry, getCanonicalBundleEntryOwners } from "../settings/validation.js";
 
 const unsupportedOptions = () => ({
     supported: false,
@@ -84,7 +83,7 @@ export function previewBundleRule({ url, settings, bundleIndex, entry } = {}) {
     const customDomainGroups = Array.isArray(settings?.customDomainGroups)
         ? settings.customDomainGroups
         : [];
-    const ownership = getCustomDomainBundleEntryOwners(customDomainGroups, entry);
+    const ownership = getCanonicalBundleEntryOwners(customDomainGroups, entry);
     const parsedUrl = safeParseUrl(url);
     if (!isWebUrl(parsedUrl)) {
         return { ownership, beforeGrouping: null, afterGrouping: null };

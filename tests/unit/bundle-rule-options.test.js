@@ -107,6 +107,24 @@ describe("bundle rule preview", () => {
         ]);
     });
 
+    it("reports Unicode stored rule ownership using the mutation boundary's canonical hostname", () => {
+        const unicodeSettings = {
+            ...settings,
+            customDomainGroups: [
+                { title: "Books", domains: ["bücher.de/Reading"] },
+                { title: "Other", domains: [] },
+            ],
+        };
+        expect(previewBundleRule({
+            url: "https://xn--bcher-kva.de/reading",
+            settings: unicodeSettings,
+            bundleIndex: 1,
+            entry: "xn--bcher-kva.de/reading",
+        }).ownership).toEqual([
+            { groupIndex: 0, domainIndex: 0, title: "Books", entry: "xn--bcher-kva.de/reading" },
+        ]);
+    });
+
     it("previews existing precedence and the winning bundle after a hypothetical path rule", () => {
         const preview = previewBundleRule({
             url: "https://docs.example.com/projects/alpha?x=1#top",

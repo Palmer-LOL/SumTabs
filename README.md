@@ -61,6 +61,18 @@ Precedence when multiple bundle rules overlap:
 2. For same-host matches, path-scoped rules beat host-only rules.
 3. Longer path prefixes win over shorter prefixes; ties keep declaration order.
 
+### Add rules from the popup
+
+Open **Custom bundles** in the popup to browse configured bundles and their saved rules, including bundles with no open tabs. Choose a bundle, then select the current hostname or its calculated root domain and a path scope. The path choices include all paths and each leading path segment from the active web page.
+
+For `https://docs.example.com/projects/alpha/issues`, for example, choose `docs.example.com/projects/alpha` to match that project on the current hostname, or `example.com/projects/alpha` to cover the same path on the root domain and inheriting subdomains. Root scope follows SumTabs' configured suffix rules; a subdomain entry targets that exact hostname. The rule preview shows the canonical entry and the resulting grouping target, including when a more specific existing rule takes precedence.
+
+Select **Add rule** to save a persistent rule and reapply grouping to eligible open tabs. This also affects future matching tabs; it is not a temporary assignment of one tab. The normal grouping threshold and window boundaries still apply. Pinned tabs, ignored hostnames, and user-created groups remain protected.
+
+Even the complete path means **this path and descendants**, not an exact page URL. Path matching remains case-insensitive and ignores query strings and fragments. Protocols, credentials, and ports are not saved in bundle rules. Select an explicit saved rule to remove it; removing a broad rule also changes grouping for other matching URLs.
+
+Bundles remain browsable on unsupported pages, but URL-derived additions require an HTTP(S) page. Create or fully edit bundles in Settings. If a bundle changes while the popup is open, review the refreshed selection before retrying. Settings also detects competing bundle edits and lets you choose the stored version or explicitly retain your draft. These safeguards coordinate local extension pages; they do not provide transactions across devices using Chrome Sync.
+
 ---
 
 ## Privacy & Permissions
@@ -133,7 +145,7 @@ This project is licensed under the **[Do What The Fuck You Want To Public Licens
 Automated testing is split into two deliberately separate layers:
 
 - **Vitest unit tests** cover deterministic JavaScript contracts and repository path integrity without loading a browser.
-- **Playwright smoke tests** load the actual unpacked Manifest V3 extension into bundled Chromium and exercise 29 browser-integration cases involving the background service worker, `chrome.tabs`, `chrome.tabGroups`, `chrome.storage.sync`, and extension pages.
+- **Playwright smoke tests** load the actual unpacked Manifest V3 extension into bundled Chromium and define 42 browser-integration cases involving the background service worker, `chrome.tabs`, `chrome.tabGroups`, `chrome.storage.sync`, and extension pages.
 
 The extension itself remains directly loadable as an unpacked Chromium extension. Normal extension use does **not** require npm installation, Node.js, a build step, bundling, or transpilation.
 
@@ -194,15 +206,18 @@ npm run test:all
 The Vitest suite covers:
 
 - Grouping identity and settings-validation contracts, including root-domain resolution, multipart suffix handling, custom bundle parsing and precedence, conflict/owner helpers, hostname normalization, persistence payload construction, import validation, and raw JSON coercion.
+- Popup bundle scope choices and matching previews; canonical Unicode-rule ownership; stale-selection reset, explicit removal, pending-action protection, and saved-result feedback when refreshing fails.
+- Bundle mutations under the shared settings writer lock, canonical add/remove and duplicate handling, stale snapshots, invalid targets, unknown-field preservation, deferred writes, and distinct save/reevaluation errors. Settings tests cover clean refresh, structured and unapplied JSON draft conflicts, and unrelated-draft preservation.
 - Shared URL helpers for safe parsing, HTTP/HTTPS acceptance, malformed input, and rejection of `chrome:`, `edge:`, `file:`, `about:`, `chrome-extension:`, `data:`, `ftp:`, and null inputs.
 - Background-controller use of a freshly updated grouping threshold and popup window-action stylesheet injection through an injected Chrome API.
 - Extension layout integrity: exact manifest entries and icon maps, manifest-selected resources, page scripts/stylesheets, static imports/re-exports, literal `chrome.runtime.getURL()` resources, local CSS references, the complete approved source tree, and absence of obsolete root runtime paths.
 
-The Playwright suite currently defines 29 cases in three files:
+The Playwright suite currently defines 42 cases in four files:
 
 - **2 extension startup/page cases:** unpacked MV3 startup and service-worker path; direct options-page loading by extension URL; and direct popup loading with its modules, core controls, section order, window summary, canonical close-all action, and no uncaught page errors.
 - **16 grouping cases:** two-tab grouping and the single-tab threshold; pinned-tab protection; user-group protection; ignored-host exclusion; active-tab preservation at first, middle, and last positions; ignored-host acknowledgement after managed-group cleanup while preserving user groups; initial-URL exemption bypass; singleton cleanup on ignored navigation; active and background ignored-navigation focus behavior; focus-mode collapse of managed groups while preserving an active user-created group; rapid managed-group activation ordering; regrouping after returning from an ignored hostname; and immediate removal of an ignored tab created inside a managed group.
 - **11 settings cases:** threshold save/reload; discard; export/import with unknown-key preservation; malformed-import rejection; ignored-host canonicalization; alignment of both legacy initial-URL keys; unsaved bundle preservation during a live ignore-list update; explicit resolution of ignore-list conflicts (including defaults); settings/popup lock coordination; and completion of a queued popup ignore update after the popup closes.
+- **13 bundle-popup cases:** configured/empty bundle browsing; scoped rules saved into a non-first bundle; root-path inheritance, boundary exclusion, and color; duplicate ownership; explicit rule removal; stale selection while queued on the shared lock; completion after popup closure; pinned/ignored/user-group protection during actual grouping; unsupported-page browsing/removal; and clean/structured/raw JSON Settings conflict behavior.
 
 The Playwright tests use a loopback HTTP server and isolated browser profiles. They do not depend on public websites or a developer's normal browser profile.
 

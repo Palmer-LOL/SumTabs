@@ -81,7 +81,7 @@ export function createBundleActions({ chromeApi, elements, announce, refresh }) 
 		elements.bundleSelect.disabled = busy || bundles.length === 0;
 		elements.bundleColor.textContent = selected
 			? `Color: ${String(selected.color || "grey")}`
-			: "No custom bundles yet.";
+			: bundles.length ? "Choose a bundle to view its rules." : "No custom bundles yet.";
 		elements.bundleColor.style.setProperty?.(
 			"--bundle-color",
 			BUNDLE_COLORS[selected?.color] ?? BUNDLE_COLORS.grey,

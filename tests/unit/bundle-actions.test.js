@@ -65,6 +65,7 @@ describe("bundle popup actions", () => {
 		actions.render(context); elements.bundleSelect.value = "1"; await elements.bundleSelect.emit("change");
 		sendMessage.mockResolvedValueOnce({ ok: false, status: "stale-bundles" }); await elements.apply.emit("click");
 		expect(elements.bundleSelect.value).toBe(""); expect(elements.apply.disabled).toBe(true); expect(elements.remove.disabled).toBe(true);
+		expect(elements.bundleColor.textContent).toBe("Choose a bundle to view its rules.");
 	});
 
 	it("preserves the mutation result when refreshing the view fails", async () => {
