@@ -47,10 +47,11 @@ test("browses every configured bundle, including an empty non-first bundle", asy
   const bundleSelect = popup.locator("#bundleSelect");
   await expect(bundleSelect.locator("option")).toHaveText(["First", "Empty target", "Last"]);
   await bundleSelect.selectOption("1");
-  await expect(popup.locator("#bundleRuleSelect")).toBeDisabled();
-  await expect(popup.locator("#bundleActionStatus")).toContainText("no stored rules");
+  await expect(popup.locator("#bundleRuleSelect option")).toHaveCount(0);
+  await expect(popup.locator("#removeBundleAction")).toBeDisabled();
   await expect(popup.locator("#bundleColor")).toHaveText("Color: purple");
 
+  await popup.locator("#bundleHostScope").selectOption("example.test");
   await popup.locator("#bundlePathScope").selectOption("/guide");
   await expect(bundleSelect).toHaveValue("1");
   await expect(popup.locator("#bundleRulePreview")).toHaveText("Rule: example.test/guide");
@@ -88,6 +89,7 @@ test("stores a canonical root and segment path rule in the selected non-first bu
     { title: "Personal", color: "blue", domains: ["personal.example"] },
     { title: "Project", color: "orange", domains: ["example.test/projects"] },
   ]);
+  await expect(popup.locator("#popupFeedback")).toHaveText("Rule added to Project. Open tabs have been reorganized.");
   await expect(popup.locator("#bundleSelect")).toHaveValue("1");
 });
 
@@ -103,10 +105,11 @@ test("applies a root path rule to sibling hosts and descendants but not a partia
   await popup.locator("#bundlePathScope").selectOption("/projects");
   await popup.locator("#applyBundleAction").click();
 
+  await expect.poll(async () => (await extensionApi.getStorage()).customDomainGroups?.[0]?.domains).toEqual(["example.test/projects"]);
   await expect.poll(async () => {
     const tabs = await extensionApi.tabsByUrls([seedUrl, siblingUrl, boundaryUrl]);
     const [first, second, boundary] = tabs.map((tab) => tab?.groupId ?? noGroupId);
-    return first !== noGroupId && first === second && boundary === noGroupId;
+    return first !== noGroupId && first === second && boundary !== first;
   }).toBe(true);
   const [groupedTab] = await extensionApi.tabsByUrls([seedUrl]);
   const group = await extensionApi.groupById(groupedTab.groupId);
@@ -141,7 +144,9 @@ test("removes the explicitly selected stored rule from the selected bundle", asy
   await openHttpPage(context, targetUrl);
   const popup = await openPopupFor({ context, extensionId, extensionApi }, targetUrl);
   await openBundleActions(popup);
+  await expect(popup.locator("#removeBundleAction")).toBeDisabled();
   await popup.locator("#bundleRuleSelect").selectOption("example.test/projects");
+  await expect(popup.locator("#removeBundleAction")).toBeEnabled();
   await popup.locator("#removeBundleAction").click();
 
   await expect.poll(async () => (await extensionApi.getStorage()).customDomainGroups).toEqual([{
@@ -168,12 +173,30 @@ test("rejects an add when bundles are renamed or reordered while the request wai
   const popup = await openPopupFor({ context, extensionId, extensionApi }, targetUrl);
   await openBundleActions(popup);
   await popup.locator("#bundleSelect").selectOption("1");
-  await popup.locator("#applyBundleAction").click();
-  await extensionApi.setStorage({ customDomainGroups: reordered });
-  await lockPage.evaluate(() => globalThis.releaseLock());
+  try {
+    await popup.locator("#applyBundleAction").click();
+    await expect.poll(async () => lockPage.evaluate((lockName) => navigator.locks.query().then(
+      (snapshot) => snapshot.pending.filter((lock) => lock.name === lockName).length,
+    ), bundleLockName)).toBe(1);
+    await extensionApi.setStorage({ customDomainGroups: reordered });
+  } finally {
+    await lockPage.evaluate(() => globalThis.releaseLock?.());
+  }
 
   await expect(popup.locator("#popupFeedback")).toContainText("Bundles changed in Settings");
   await expect.poll(async () => (await extensionApi.getStorage()).customDomainGroups).toEqual(reordered);
+  await expect(popup.locator("#bundleSelect option").first()).toHaveText("Choose a bundle again");
+  await expect(popup.locator("#bundleSelect")).toHaveValue("");
+  await expect(popup.locator("#applyBundleAction")).toBeDisabled();
+  await expect(popup.locator("#removeBundleAction")).toBeDisabled();
+
+  await popup.locator("#bundleSelect").selectOption("0");
+  await expect(popup.locator("#applyBundleAction")).toBeEnabled();
+  await popup.locator("#applyBundleAction").click();
+  await expect.poll(async () => (await extensionApi.getStorage()).customDomainGroups).toEqual([
+    { title: "Two renamed", domains: ["docs.example.test"] },
+    { title: "One", domains: [] },
+  ]);
 });
 
 test("finishes a queued popup mutation after its popup tab closes", async ({ context, extensionId, extensionApi, extensionPage, httpServer }) => {
@@ -209,8 +232,9 @@ test("keeps pinned, ignored, and user-group tabs protected after adding a matchi
     httpServer.urlFor("manual.example.test", "/scope/d"),
   ];
   const seedUrl = httpServer.urlFor("seed.example.test", "/scope/e");
+  const ordinaryUrl = httpServer.urlFor("ordinary.example.test", "/scope/f");
   await setBundles(extensionApi, [{ title: "Protected", domains: [] }]);
-  for (const url of [pinnedUrl, ignoredUrl, ...userUrls, seedUrl]) await openHttpPage(context, url);
+  for (const url of [pinnedUrl, ignoredUrl, ...userUrls, seedUrl, ordinaryUrl]) await openHttpPage(context, url);
   await extensionApi.pinTabByUrl(pinnedUrl);
   await extensionApi.updateIgnoredHostname("ignored.example.test", true);
   const userGroup = await extensionApi.createUserGroup(userUrls, "Manual group");
@@ -219,22 +243,27 @@ test("keeps pinned, ignored, and user-group tabs protected after adding a matchi
   await popup.locator("#bundleHostScope").selectOption("example.test");
   await popup.locator("#applyBundleAction").click();
 
+  await expect.poll(async () => (await extensionApi.getStorage()).customDomainGroups?.[0]?.domains).toEqual(["example.test"]);
   await expect.poll(async () => {
-    const [pinned, ignored, ...rest] = await extensionApi.tabsByUrls([pinnedUrl, ignoredUrl, ...userUrls, seedUrl]);
-    const seed = rest.pop();
+    const [seed, ordinary] = await extensionApi.tabsByUrls([seedUrl, ordinaryUrl]);
+    return seed?.groupId !== noGroupId && seed?.groupId === ordinary?.groupId;
+  }).toBe(true);
+
+  await expect.poll(async () => {
+    const [pinned, ignored, ...manual] = await extensionApi.tabsByUrls([pinnedUrl, ignoredUrl, ...userUrls]);
     return {
       pinned: { pinned: pinned?.pinned, groupId: pinned?.groupId },
       ignoredGroupId: ignored?.groupId,
-      manualGroupIds: rest.map((tab) => tab?.groupId),
-      singletonGroupId: seed?.groupId,
+      manualGroupIds: manual.map((tab) => tab?.groupId),
     };
   }).toEqual({
     pinned: { pinned: true, groupId: noGroupId },
     ignoredGroupId: noGroupId,
     manualGroupIds: [userGroup.groupId, userGroup.groupId],
-    singletonGroupId: noGroupId,
   });
   expect((await extensionApi.groupById(userGroup.groupId)).title).toBe("Manual group");
+  const [ordinary] = await extensionApi.tabsByUrls([ordinaryUrl]);
+  expect(await extensionApi.groupById(ordinary.groupId)).toMatchObject({ title: `${managedPrefix}Protected` });
 });
 
 test("supports browsing and removal on a non-HTTP active tab while add controls stay unavailable", async ({ context, extensionId, extensionApi, extensionPage }) => {
@@ -258,14 +287,21 @@ test("absorbs an external bundle update when the Settings bundle editor is clean
   await expect(settings.locator("#bundleConflict")).toBeHidden();
 });
 
-test("requires a choice for an external update while the structured bundle editor is dirty and preserves unrelated drafts", async ({ extensionPage, extensionApi }) => {
+test("requires a choice for a popup add while the structured bundle editor is dirty and preserves unrelated drafts", async ({ context, extensionId, extensionPage, extensionApi, httpServer }) => {
   await setBundles(extensionApi, [{ title: "Before", domains: [] }]);
   const settings = await extensionPage(settingsPath);
   await settings.getByText("Custom bundles", { exact: true }).click();
   await settings.getByLabel("Bundle title").fill("My bundle draft");
-  await settings.getByText("Site separation rules").click();
+  await settings.getByText("Site separation rules", { exact: true }).click();
   await settings.getByLabel("Ignore these specific hostnames").fill("unrelated-draft.example");
-  await extensionApi.setStorage({ customDomainGroups: [{ title: "From popup", domains: ["example.test"] }] });
+  const targetUrl = httpServer.urlFor("docs.example.test", "/settings-conflict");
+  await openHttpPage(context, targetUrl);
+  const popup = await openPopupFor({ context, extensionId, extensionApi }, targetUrl);
+  await openBundleActions(popup);
+  await popup.locator("#applyBundleAction").click();
+  await expect.poll(async () => (await extensionApi.getStorage()).customDomainGroups).toEqual([
+    { title: "Before", domains: ["docs.example.test"] },
+  ]);
 
   await expect(settings.locator("#bundleConflict")).toBeVisible();
   await expect(settings.getByRole("button", { name: "Save changes" })).toBeDisabled();
@@ -279,7 +315,7 @@ test("treats unapplied raw bundle JSON as dirty during an external update", asyn
   await setBundles(extensionApi, [{ title: "Before", domains: [] }]);
   const settings = await extensionPage(settingsPath);
   await settings.getByText("Custom bundles", { exact: true }).click();
-  await settings.getByText("Advanced: view or edit raw JSON").click();
+  await settings.getByText("Advanced: view or edit raw JSON", { exact: true }).click();
   const raw = settings.locator("#customDomainGroupsJson");
   const rawDraft = '[{"title":"Raw draft","domains":["draft.example"]}]';
   await raw.fill(rawDraft);

@@ -89,7 +89,8 @@ export const test = base.extend({
         "--disable-background-networking",
         "--disable-component-update",
         "--no-first-run",
-		"--host-resolver-rules=MAP *.example.test 127.0.0.1",
+        "--no-proxy-server",
+        "--host-resolver-rules=MAP *.example.test 127.0.0.1",
       ],
     });
 
