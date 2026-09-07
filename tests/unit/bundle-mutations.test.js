@@ -38,6 +38,50 @@ describe("bundle mutation service", () => {
         expect(h.chromeApi.storage.sync.set).not.toHaveBeenCalled();
     });
 
+    it("canonicalizes Unicode stored owners while retaining their original indexes", async () => {
+        const removeGroups = [{ title: "A", domains: ["other.example", "bücher.de"] }];
+        const remove = harness(removeGroups);
+        await expect(remove.service.update({ operation: "remove", bundleIndex: 0, expectedBundlesSnapshot: snapshot(removeGroups), entry: "bücher.de" }))
+            .resolves.toEqual({ ok: true, status: "removed", entry: "xn--bcher-kva.de" });
+        expect(remove.getStored().customDomainGroups[0].domains).toEqual(["other.example"]);
+
+        const addGroups = [{ title: "A", domains: ["bücher.de"] }, { title: "B", domains: [] }];
+        const add = harness(addGroups);
+        await expect(add.service.update({ operation: "add", bundleIndex: 1, expectedBundlesSnapshot: snapshot(addGroups), entry: "xn--bcher-kva.de" }))
+            .resolves.toMatchObject({ ok: false, status: "duplicate-rule", entry: "xn--bcher-kva.de", owners: [{ groupIndex: 0, domainIndex: 0, entry: "xn--bcher-kva.de" }] });
+        expect(add.chromeApi.storage.sync.set).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        { groups: [{ domains: [] }] },
+        { groups: [{ title: "", domains: [] }] },
+        { groups: [{ title: "   ", domains: [] }] },
+        { groups: [{ title: 42, domains: [] }] },
+    ])("rejects stored bundles with absent, blank, or non-string titles", async ({ groups }) => {
+        const h = harness(groups);
+        await expect(h.service.update({ operation: "add", bundleIndex: 0, expectedBundlesSnapshot: snapshot(groups), entry: "example.com" }))
+            .resolves.toMatchObject({ ok: false, status: "invalid-rule" });
+        expect(h.chromeApi.storage.sync.set).not.toHaveBeenCalled();
+        expect(h.enqueueForceReevaluation).not.toHaveBeenCalled();
+    });
+
+    it("keeps an accepted operation queued behind the shared lock until its worker-owned promise completes", async () => {
+        const groups = [{ title: "A", domains: [] }];
+        const h = harness(groups);
+        let enterLock;
+        h.navigatorRef.locks.request.mockImplementationOnce((_name, callback) => new Promise((resolve, reject) => {
+            enterLock = () => Promise.resolve(callback()).then(resolve, reject);
+        }));
+
+        const accepted = h.service.update({ operation: "add", bundleIndex: 0, expectedBundlesSnapshot: snapshot(groups), entry: "example.com" });
+        await Promise.resolve();
+        expect(h.chromeApi.storage.sync.set).not.toHaveBeenCalled();
+        enterLock();
+        await expect(accepted).resolves.toEqual({ ok: true, status: "added", entry: "example.com" });
+        expect(h.chromeApi.storage.sync.set).toHaveBeenCalledOnce();
+        expect(h.settingsState.reload).toHaveBeenCalledBefore(h.enqueueForceReevaluation);
+    });
+
     it("returns honest no-op statuses and validates operation, index, entry, and stored group shape", async () => {
         const groups = [{ title: "One", domains: ["example.com"] }];
         const h = harness(groups);

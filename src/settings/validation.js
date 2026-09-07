@@ -77,6 +77,27 @@ export function canonicalizeDomainEntry(rawEntry) {
     };
 }
 
+export function getCanonicalBundleEntryOwners(customDomainGroups, domainEntry) {
+    const target = canonicalizeDomainEntry(domainEntry);
+    if (!target.valid) return [];
+
+    const owners = [];
+    (customDomainGroups ?? []).forEach((group, groupIndex) => {
+        if (!Array.isArray(group?.domains)) return;
+        group.domains.forEach((storedEntry, domainIndex) => {
+            const stored = canonicalizeDomainEntry(storedEntry);
+            if (!stored.valid || stored.canonicalEntry !== target.canonicalEntry) return;
+            owners.push({
+                groupIndex,
+                domainIndex,
+                title: String(group?.title ?? "").trim(),
+                entry: stored.canonicalEntry,
+            });
+        });
+    });
+    return owners;
+}
+
 export function parseDomainsTextarea(text) {
     const seen = new Set();
     const validDomains = [];
@@ -248,10 +269,13 @@ export function coerceGroupsFromJson(value) {
             throw new Error(`Bundle ${index + 1} has an unsupported color.`);
         }
 
-        return {
+        const coerced = {
+            ...structuredClone(group),
             title: group.title,
             domainsText: group.domains.join("\n"),
             color,
         };
+        delete coerced.domains;
+        return coerced;
     });
 }

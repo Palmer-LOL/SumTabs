@@ -97,10 +97,13 @@ describe("custom bundle normalization and persistence helpers", () => {
 });
 
 describe("raw JSON coercion", () => {
-    it("coerces a valid array of bundle objects and ignores unknown properties", () => {
-        expect(coerceGroupsFromJson([{ title: "AI", domains: ["chatgpt.com"], color: "Purple", extra: true }])).toEqual([
-            { title: "AI", domainsText: "chatgpt.com", color: "purple" },
+    it("preserves unknown nested properties through raw JSON apply and persistence", () => {
+        const raw = [{ title: "Renamed", domains: ["chatgpt.com"], color: "purple", future: { keep: true } }];
+        const coerced = coerceGroupsFromJson(raw);
+        expect(coerced).toEqual([
+            { title: "Renamed", domainsText: "chatgpt.com", color: "purple", future: { keep: true } },
         ]);
+        expect(groupsForPersistence(coerced)).toEqual(raw);
     });
 
     it.each([

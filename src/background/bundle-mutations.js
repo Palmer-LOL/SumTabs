@@ -1,5 +1,7 @@
-import { getCustomDomainBundleEntryOwners } from "../core/grouping.js";
-import { canonicalizeDomainEntry } from "../settings/validation.js";
+import {
+    canonicalizeDomainEntry,
+    getCanonicalBundleEntryOwners,
+} from "../settings/validation.js";
 
 const SETTINGS_STORAGE_LOCK = "sumtabs:ignored-hostnames-storage";
 
@@ -42,6 +44,8 @@ export function createBundleMutationService({
                 }
 
                 if (groups.some(group => !group || typeof group !== "object"
+                    || typeof group.title !== "string"
+                    || !group.title.trim()
                     || !Array.isArray(group.domains)
                     || group.domains.some(domain => typeof domain !== "string"
                         || !canonicalizeDomainEntry(domain).valid))) {
@@ -53,7 +57,7 @@ export function createBundleMutationService({
                     return invalid("The selected stored bundle is invalid.");
                 }
 
-                const owners = getCustomDomainBundleEntryOwners(groups, entry);
+                const owners = getCanonicalBundleEntryOwners(groups, entry);
                 const selectedOwner = owners.find(owner => owner.groupIndex === message.bundleIndex);
                 if (message.operation === "add") {
                     if (selectedOwner) return { ok: true, status: "already-present", entry };
