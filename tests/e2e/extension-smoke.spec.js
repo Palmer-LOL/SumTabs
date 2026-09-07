@@ -19,11 +19,26 @@ test("loads the popup page modules and core controls inside the extension origin
   await expect(popupPage.getByRole("heading", { name: "SumTabs" })).toBeVisible();
   await expect(popupPage.getByRole("button", { name: "Open settings" })).toBeVisible();
   await expect(popupPage.getByRole("button", { name: "Reapply rules to open tabs" })).toBeVisible();
-  await expect(popupPage.getByRole("status")).toBeAttached();
+  await expect(popupPage.locator("#popupFeedback")).toHaveAttribute("role", "status");
   await expect(popupPage.getByText("Current tab", { exact: true })).toBeVisible();
+  await expect(popupPage.getByText("Custom bundles", { exact: true })).toBeVisible();
   await expect(popupPage.getByText("Current window", { exact: true })).toBeVisible();
   await expect(popupPage.getByText("More actions", { exact: true })).toBeVisible();
   await expect(popupPage.getByRole("checkbox", { name: "Ignore this hostname", includeHidden: true })).toBeAttached();
+  for (const id of [
+    "bundleActionsCard",
+    "bundleSelect",
+    "bundleHostScope",
+    "bundlePathScope",
+    "bundleRuleSelect",
+    "bundleRulePreview",
+    "bundleActionStatus",
+    "applyBundleAction",
+    "removeBundleAction",
+  ]) {
+    await expect(popupPage.locator(`#${id}`), `${id} should be present in the popup bundle disclosure`).toBeAttached();
+  }
+  await expect(popupPage.locator("#bundleActionStatus")).toHaveAttribute("role", "status");
 
   const sectionIds = await popupPage
     .locator(".popup__sections > .popup__section")

@@ -68,6 +68,7 @@ async function startServer() {
   return {
     baseUrl,
     url: (pathname) => `${baseUrl}${pathname}`,
+    urlFor: (hostname, pathname = "/") => `http://${hostname}:${address.port}${pathname}`,
     close: () => new Promise((resolve, reject) => {
       server.closeIdleConnections?.();
       server.closeAllConnections?.();
@@ -88,6 +89,7 @@ export const test = base.extend({
         "--disable-background-networking",
         "--disable-component-update",
         "--no-first-run",
+		"--host-resolver-rules=MAP *.example.test 127.0.0.1",
       ],
     });
 
@@ -164,6 +166,7 @@ export const test = base.extend({
           await page.close();
         }
       },
+	  activateTabByUrl: (url) => evaluateInWorker(`const targetUrl = ${JSON.stringify(url)}; const tabs = await callbackify(chrome.tabs.query.bind(chrome.tabs), {}); const tab = tabs.find((candidate) => candidate.url === targetUrl); if (!tab) throw new Error('Tab not found for activation'); return await callbackify(chrome.tabs.update.bind(chrome.tabs), tab.id, { active: true });`),
       tabByUrl: (url) => evaluateInWorker(`const targetUrl = ${JSON.stringify(url)}; const tabs = await callbackify(chrome.tabs.query.bind(chrome.tabs), {}); return tabs.find((tab) => tab.url === targetUrl) || null;`),
       tabsByUrls: (urls) => evaluateInWorker(`const urls = ${JSON.stringify(urls)}; const tabs = await callbackify(chrome.tabs.query.bind(chrome.tabs), {}); return urls.map((url) => tabs.find((tab) => tab.url === url) || null);`),
       groupById: (groupId) => evaluateInWorker(`return await callbackify(chrome.tabGroups.get.bind(chrome.tabGroups), ${JSON.stringify(groupId)});`),
