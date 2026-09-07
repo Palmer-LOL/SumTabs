@@ -145,11 +145,7 @@ export function createSettingsEditor({ documentRef }) {
             commonMultipartSuffixes: $("commonMultipartSuffixes").value,
             excludedFromRootCollapse: $("excludedFromRootCollapse").value,
             ignoredHostnames: $("ignoredHostnames").value,
-            customDomainGroups: customGroupsState.map((group) => ({
-                title: String(group?.title ?? ""),
-                domainsText: String(group?.domainsText ?? ""),
-                color: String(group?.color ?? ""),
-            })),
+            customDomainGroups: groupsForRawJson(customGroupsState),
         });
     }
 
@@ -222,6 +218,7 @@ export function createSettingsEditor({ documentRef }) {
 
     function setGroupsState(groups, preferredIndex = 0) {
         customGroupsState = Array.isArray(groups) ? groups.map((group) => ({
+            ...structuredClone(group),
             title: String(group?.title ?? ""),
             domainsText: String(group?.domainsText ?? domainsToLines(group?.domains ?? [])),
             color: VALID_GROUP_COLORS.has(String(group?.color ?? "").trim().toLowerCase())
@@ -265,6 +262,14 @@ export function createSettingsEditor({ documentRef }) {
 
     function loadDefaultsIntoEditor() {
         populateForm(DEFAULTS);
+    }
+
+    function replaceGroupsFromStorage(groups) {
+        jsonDraftDirty = false;
+        pendingDeletion = null;
+        $("undoDelete").hidden = true;
+        setGroupsState(normalizeStoredGroups(groups));
+        syncAdvancedJsonFromUi({ force: true });
     }
 
     function getPersistenceValues() {
@@ -407,5 +412,6 @@ export function createSettingsEditor({ documentRef }) {
         getPersistenceValues,
         bindEditorEvents,
         setGroupsState,
+        replaceGroupsFromStorage,
     };
 }

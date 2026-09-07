@@ -77,6 +77,27 @@ export function canonicalizeDomainEntry(rawEntry) {
     };
 }
 
+export function getCanonicalBundleEntryOwners(customDomainGroups, domainEntry) {
+    const target = canonicalizeDomainEntry(domainEntry);
+    if (!target.valid) return [];
+
+    const owners = [];
+    (customDomainGroups ?? []).forEach((group, groupIndex) => {
+        if (!Array.isArray(group?.domains)) return;
+        group.domains.forEach((storedEntry, domainIndex) => {
+            const stored = canonicalizeDomainEntry(storedEntry);
+            if (!stored.valid || stored.canonicalEntry !== target.canonicalEntry) return;
+            owners.push({
+                groupIndex,
+                domainIndex,
+                title: String(group?.title ?? "").trim(),
+                entry: stored.canonicalEntry,
+            });
+        });
+    });
+    return owners;
+}
+
 export function parseDomainsTextarea(text) {
     const seen = new Set();
     const validDomains = [];
@@ -188,11 +209,14 @@ export function normalizeStoredGroups(groups) {
     return groups.map((group) => {
         const color = String(group?.color ?? "").trim().toLowerCase();
         const domainsText = domainsToLines(Array.isArray(group?.domains) ? group.domains : []);
-        return {
+        const normalized = {
+            ...structuredClone(group),
             title: String(group?.title ?? "").trim(),
             domainsText,
             color: VALID_GROUP_COLORS.has(color) ? color : "",
         };
+        delete normalized.domains;
+        return normalized;
     });
 }
 
@@ -201,22 +225,28 @@ export function groupRawDomains(group) {
 }
 
 export function groupsForRawJson(customGroupsState) {
-    return (customGroupsState ?? []).map((group) => ({
-        title: String(group?.title ?? ""),
-        domains: groupRawDomains(group),
-        ...(VALID_GROUP_COLORS.has(String(group?.color ?? "")) ? { color: group.color } : {}),
-    }));
+    return (customGroupsState ?? []).map((group) => {
+        const raw = { ...structuredClone(group), title: String(group?.title ?? ""), domains: groupRawDomains(group) };
+        delete raw.domainsText;
+        if (VALID_GROUP_COLORS.has(String(group?.color ?? ""))) raw.color = group.color;
+        else delete raw.color;
+        return raw;
+    });
 }
 
 export function groupsForPersistence(customGroupsState) {
     return (customGroupsState ?? []).map((group) => {
         const parsedDomains = parseDomainsTextarea(group?.domainsText ?? "");
         const color = String(group?.color ?? "").trim().toLowerCase();
-        return {
+        const persisted = {
+            ...structuredClone(group),
             title: String(group?.title ?? "").trim(),
             domains: parsedDomains.validDomains,
             ...(VALID_GROUP_COLORS.has(color) ? { color } : {}),
         };
+        delete persisted.domainsText;
+        if (!VALID_GROUP_COLORS.has(color)) delete persisted.color;
+        return persisted;
     });
 }
 
@@ -239,10 +269,13 @@ export function coerceGroupsFromJson(value) {
             throw new Error(`Bundle ${index + 1} has an unsupported color.`);
         }
 
-        return {
+        const coerced = {
+            ...structuredClone(group),
             title: group.title,
             domainsText: group.domains.join("\n"),
             color,
         };
+        delete coerced.domains;
+        return coerced;
     });
 }

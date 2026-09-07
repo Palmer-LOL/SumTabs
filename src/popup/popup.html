@@ -72,6 +72,32 @@
 				</div>
 			</details>
 
+			<details class="popup__section" id="bundleActionsCard" aria-busy="false">
+				<summary class="popup__section-summary">Custom bundles</summary>
+				<div class="popup__section-content">
+					<label class="popup__field">Bundle
+						<select class="popup__select" id="bundleSelect" aria-describedby="bundleColor bundleActionStatus"></select>
+					</label>
+					<div class="popup__bundle-color settings__small-text" id="bundleColor"></div>
+					<div class="popup__scope-grid">
+						<label class="popup__field">Host scope
+							<select class="popup__select" id="bundleHostScope" aria-describedby="bundleRulePreview"></select>
+						</label>
+						<label class="popup__field">Path scope
+							<select class="popup__select" id="bundlePathScope" aria-describedby="bundleRulePreview"></select>
+						</label>
+					</div>
+					<code class="popup__rule-preview" id="bundleRulePreview"></code>
+					<button class="button button--primary" id="applyBundleAction" type="button">Add rule</button>
+					<label class="popup__field">Stored rules
+						<select class="popup__select popup__rule-list" id="bundleRuleSelect" size="4" aria-describedby="bundleActionStatus"></select>
+					</label>
+					<button class="button button--danger-secondary" id="removeBundleAction" type="button">Remove selected rule</button>
+					<div class="settings__small-text" id="bundleActionStatus" role="status" aria-live="polite"></div>
+					<button class="button button--link" id="openBundleSettings" type="button">Create or fully edit bundles in Settings</button>
+				</div>
+			</details>
+
 			<details
 				class="popup__section"
 				id="quickActionsCard"
@@ -217,36 +243,6 @@
 						</button>
 					</div>
 
-					<div class="popup__status-row" id="bundleActionRow">
-						<label class="popup__status-value" for="bundleSelect"
-							>Custom bundle</label
-						>
-						<select
-							class="popup__select"
-							id="bundleSelect"
-							aria-describedby="bundleActionStatus"
-						></select>
-						<div
-							class="settings__small-text"
-							id="bundleActionStatus"
-						></div>
-						<div class="popup__button-row">
-							<button
-								class="button"
-								id="applyBundleAction"
-								type="button"
-							>
-								Apply
-							</button>
-							<button
-								class="button"
-								id="removeBundleAction"
-								type="button"
-							>
-								Remove
-							</button>
-						</div>
-					</div>
 				</div>
 			</details>
 

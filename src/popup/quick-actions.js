@@ -1,9 +1,4 @@
 import { DEFAULTS } from "../core/defaults.js";
-import { getCustomDomainBundleEntryOwners } from "../core/grouping.js";
-
-function normalizeBundleTitle(group, index) {
-	return String(group?.title ?? "").trim() || `Untitled bundle ${index + 1}`;
-}
 
 function normalizeLowerList(values) {
 	return new Set(
@@ -67,65 +62,6 @@ export function createQuickActions({ chromeApi, elements, announce, refresh }) {
 		button.disabled = disabled || quickActionInFlight;
 	}
 
-	function getBundleOwnershipLabel(owners) {
-		return owners
-			.map(
-				(owner) => owner.title || `Untitled bundle ${owner.groupIndex + 1}`,
-			)
-			.join(", ");
-	}
-
-	function updateBundleSelectionStatus() {
-		if (!quickActionContext) return;
-
-		const hasBundles = quickActionContext.customDomainGroups.length > 0;
-		const selectedIndex = Number(elements.bundleSelect.value);
-		const isAlreadyInSelectedBundle =
-			quickActionContext.bundleMembershipByIndex.has(selectedIndex);
-		const isInAnyBundle = quickActionContext.bundleOwners.length > 0;
-		const isOnlyInSelectedBundle =
-			isAlreadyInSelectedBundle &&
-			quickActionContext.bundleOwners.every(
-				(owner) => owner.groupIndex === selectedIndex,
-			);
-
-		elements.applyBundle.disabled =
-			!hasBundles ||
-			isAlreadyInSelectedBundle ||
-			isInAnyBundle ||
-			quickActionInFlight;
-		elements.removeBundle.disabled =
-			!hasBundles || !isAlreadyInSelectedBundle || quickActionInFlight;
-
-		if (!hasBundles) {
-			elements.bundleStatus.textContent =
-				"No custom bundles exist yet. Open Settings to create one.";
-		} else if (isOnlyInSelectedBundle) {
-			elements.bundleStatus.textContent = `${quickActionContext.hostname} is already in this bundle. Use Remove to take it out.`;
-		} else if (isInAnyBundle) {
-			elements.bundleStatus.textContent = `${quickActionContext.hostname} is already in ${getBundleOwnershipLabel(quickActionContext.bundleOwners)}. Remove it there before adding it to another bundle.`;
-		} else {
-			elements.bundleStatus.textContent = `Add ${quickActionContext.hostname} to ${normalizeBundleTitle(quickActionContext.customDomainGroups[selectedIndex], selectedIndex)}.`;
-		}
-	}
-
-	function renderBundleAction(context) {
-		elements.bundleRow.hidden = false;
-		elements.bundleSelect.innerHTML = "";
-
-		const bundles = context.customDomainGroups;
-		bundles.forEach((group, index) => {
-			const option = elements.bundleSelect.ownerDocument.createElement("option");
-			option.value = String(index);
-			option.textContent = normalizeBundleTitle(group, index);
-			elements.bundleSelect.appendChild(option);
-		});
-
-		const hasBundles = bundles.length > 0;
-		elements.bundleSelect.disabled = !hasBundles || quickActionInFlight;
-		updateBundleSelectionStatus();
-	}
-
 	function render(context) {
 		quickActionContext = context;
 
@@ -134,7 +70,6 @@ export function createQuickActions({ chromeApi, elements, announce, refresh }) {
 			elements.ignoreRow.hidden = true;
 			elements.exactRow.hidden = true;
 			elements.domainRow.hidden = true;
-			elements.bundleRow.hidden = true;
 			return;
 		}
 
@@ -185,7 +120,6 @@ export function createQuickActions({ chromeApi, elements, announce, refresh }) {
 			hidden: !context.domainActionAvailable,
 		});
 
-		renderBundleAction(context);
 	}
 
 	async function updateSyncList(key, updateList) {
@@ -256,72 +190,6 @@ export function createQuickActions({ chromeApi, elements, announce, refresh }) {
 		}
 	}
 
-	async function updateSelectedBundleMembership({ shouldAdd }) {
-		if (!quickActionContext) return;
-
-		const selectedIndex = Number(elements.bundleSelect.value);
-		if (!Number.isInteger(selectedIndex) || selectedIndex < 0) return;
-
-		const selectedBundleTitle = normalizeBundleTitle(
-			quickActionContext.customDomainGroups[selectedIndex],
-			selectedIndex,
-		);
-		setQuickActionBusy(
-			true,
-			shouldAdd
-				? `Adding to ${selectedBundleTitle}…`
-				: `Removing from ${selectedBundleTitle}…`,
-		);
-		render(quickActionContext);
-
-		try {
-			const stored = await chromeApi.storage.sync.get(DEFAULTS);
-			const customDomainGroups = Array.isArray(stored.customDomainGroups)
-				? stored.customDomainGroups
-				: [];
-			const selectedGroup = customDomainGroups[selectedIndex];
-			if (!selectedGroup) return;
-
-			const latestOwners = getCustomDomainBundleEntryOwners(
-				customDomainGroups,
-				quickActionContext.hostname,
-			);
-			const latestSelectedOwners = latestOwners.filter(
-				(owner) => owner.groupIndex === selectedIndex,
-			);
-
-			if (shouldAdd && latestOwners.length > 0) return;
-			if (!shouldAdd && latestSelectedOwners.length === 0) return;
-
-			const currentDomains = Array.isArray(selectedGroup.domains)
-				? selectedGroup.domains
-				: [];
-			const normalizedDomains = normalizeLowerArray(currentDomains);
-			const nextDomains = shouldAdd
-				? [...normalizedDomains, quickActionContext.hostname]
-				: normalizedDomains.filter(
-						(domain) => domain !== quickActionContext.hostname,
-					);
-
-			customDomainGroups[selectedIndex] = {
-				...selectedGroup,
-				domains: nextDomains,
-			};
-			await chromeApi.storage.sync.set({ customDomainGroups });
-			await requestForceReevaluate();
-
-			await refresh();
-			announce(
-				shouldAdd
-					? `Added to ${selectedBundleTitle}. Open tabs have been reorganized.`
-					: `Removed from ${selectedBundleTitle}.`,
-			);
-		} finally {
-			setQuickActionBusy(false);
-			render(quickActionContext);
-		}
-	}
-
 	async function toggleDomainAction() {
 		if (!quickActionContext?.domainActionAvailable) return;
 
@@ -374,22 +242,6 @@ export function createQuickActions({ chromeApi, elements, announce, refresh }) {
 			runAction(
 				toggleDomainAction,
 				"Failed to update domain-wide separation rule",
-			);
-		});
-		elements.bundleSelect.addEventListener(
-			"change",
-			updateBundleSelectionStatus,
-		);
-		elements.applyBundle.addEventListener("click", () => {
-			runAction(
-				() => updateSelectedBundleMembership({ shouldAdd: true }),
-				"Failed to add hostname to custom domain bundle",
-			);
-		});
-		elements.removeBundle.addEventListener("click", () => {
-			runAction(
-				() => updateSelectedBundleMembership({ shouldAdd: false }),
-				"Failed to remove hostname from custom domain bundle",
 			);
 		});
 	}

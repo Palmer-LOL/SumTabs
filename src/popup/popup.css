@@ -75,12 +75,57 @@
 }
 
 #statusCard,
-#quickActionsCard {
+#quickActionsCard,
+#bundleActionsCard {
   display: block;
 }
 
 #quickActionsCard[hidden] {
   display: none;
+}
+
+.popup__field {
+  display: grid;
+  gap: 5px;
+  font-weight: 600;
+}
+
+.popup__scope-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-sm);
+}
+
+.popup__select {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 7px;
+  color: var(--color-text);
+  background: var(--color-bg);
+}
+
+.popup__bundle-color::before {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--bundle-color, var(--color-border-strong));
+  content: "";
+}
+
+.popup__rule-preview {
+  overflow-wrap: anywhere;
+  padding: 7px 8px;
+  border-radius: 6px;
+  background: var(--color-bg);
+}
+
+.popup__rule-list {
+  min-height: 76px;
 }
 
 #statusCard .popup__status-row {

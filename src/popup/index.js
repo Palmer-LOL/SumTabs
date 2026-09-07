@@ -1,5 +1,6 @@
 import { DEFAULTS } from "../core/defaults.js";
-import { getActiveTabStatus } from "./active-tab-status.js";
+import { getActiveTabStatus, getBundleActionsContext } from "./active-tab-status.js";
+import { createBundleActions } from "./bundle-actions.js";
 import { createQuickActions } from "./quick-actions.js";
 import { initWindowActions } from "./window-actions.js";
 import { initWindowSummary } from "./window-summary.js";
@@ -27,11 +28,19 @@ function cacheElements(documentRef) {
 			domainLabel: documentRef.getElementById("domainActionLabel"),
 			domainStatus: documentRef.getElementById("domainActionStatus"),
 			toggleDomain: documentRef.getElementById("toggleDomainAction"),
-			bundleRow: documentRef.getElementById("bundleActionRow"),
+		},
+		bundleActions: {
+			card: documentRef.getElementById("bundleActionsCard"),
 			bundleSelect: documentRef.getElementById("bundleSelect"),
-			bundleStatus: documentRef.getElementById("bundleActionStatus"),
-			applyBundle: documentRef.getElementById("applyBundleAction"),
-			removeBundle: documentRef.getElementById("removeBundleAction"),
+			bundleColor: documentRef.getElementById("bundleColor"),
+			hostScope: documentRef.getElementById("bundleHostScope"),
+			pathScope: documentRef.getElementById("bundlePathScope"),
+			preview: documentRef.getElementById("bundleRulePreview"),
+			ruleSelect: documentRef.getElementById("bundleRuleSelect"),
+			status: documentRef.getElementById("bundleActionStatus"),
+			apply: documentRef.getElementById("applyBundleAction"),
+			remove: documentRef.getElementById("removeBundleAction"),
+			openSettings: documentRef.getElementById("openBundleSettings"),
 		},
 	};
 }
@@ -191,13 +200,15 @@ async function initPopup({
 } = {}) {
 	const elements = cacheElements(documentRef);
 	let quickActions;
+	let bundleActions;
 	const refresh = async () => {
-		const { status, context } = await getActiveTabStatus({
-			chromeApi,
-			defaults: DEFAULTS,
-		});
+		const [{ status, context }, bundleContext] = await Promise.all([
+			getActiveTabStatus({ chromeApi, defaults: DEFAULTS }),
+			getBundleActionsContext({ chromeApi, defaults: DEFAULTS }),
+		]);
 		setStatus(elements, status);
 		quickActions.render(context);
+		bundleActions.render(bundleContext);
 	};
 	quickActions = createQuickActions({
 		chromeApi,
@@ -205,8 +216,15 @@ async function initPopup({
 		announce: (message) => announcePopupFeedback(elements, message),
 		refresh,
 	});
+	bundleActions = createBundleActions({
+		chromeApi,
+		elements: elements.bundleActions,
+		announce: (message) => announcePopupFeedback(elements, message),
+		refresh,
+	});
 
 	quickActions.bind();
+	bundleActions.bind();
 	bindPopupControls({ chromeApi, elements, windowRef });
 	const refreshDisclosureBindings = bindPopupUi(documentRef);
 
@@ -228,6 +246,6 @@ initPopup().catch((error) => {
 	elements.quickActions.ignoreRow.hidden = true;
 	elements.quickActions.exactRow.hidden = true;
 	elements.quickActions.domainRow.hidden = true;
-	elements.quickActions.bundleRow.hidden = true;
+	elements.bundleActions.card.hidden = false;
 	announcePopupFeedback(elements, "Could not load popup status. Try again.");
 });
